@@ -1,4 +1,4 @@
-package transformer
+package io.github.farhazulmullick.compiler.transformer
 
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.extensions.FirIncompatiblePluginAPI
@@ -155,10 +155,10 @@ class SemanticsIrTransformer(
             // Create: Modifier.semantics { testTagsAsResourceId = true; testTag = "..." }
             irCall(getSemanticsFunction()).apply {
                 // Receiver (Modifier)
-                IrMemberAccessExpression.extensionReceiver = irCall(getModifierCompanion())
+                extensionReceiver = irCall(getModifierCompanion())
 
                 // Lambda parameter
-                IrMemberAccessExpression.putValueArgument(0, createSemanticsLambda(testTag))
+                putValueArgument(0, createSemanticsLambda(testTag))
             }
         }
     }
@@ -193,13 +193,13 @@ class SemanticsIrTransformer(
             body = pluginContext.irBuiltIns.createIrBuilder(symbol).irBlockBody {
                 // Set testTagsAsResourceId = true
                 +irCall(getTestTagsAsResourceIdField().owner.setter!!).apply {
-                    IrMemberAccessExpression.dispatchReceiver = irGet(receiverParam)
-                    IrMemberAccessExpression.putValueArgument(0, irBoolean(true))
+                    dispatchReceiver = irGet(receiverParam)
+                    putValueArgument(0, irBoolean(true))
                 }
                 // Set testTag = testTag
                 +irCall(getTestTagField().owner.setter!!).apply {
-                    IrMemberAccessExpression.dispatchReceiver = irGet(receiverParam)
-                    IrMemberAccessExpression.putValueArgument(0, irString(testTag))
+                    dispatchReceiver = irGet(receiverParam)
+                    putValueArgument(0, irString(testTag))
                 }
             }
         }
@@ -223,8 +223,8 @@ class SemanticsIrTransformer(
             // Chain with existing modifier: existingModifier.then(newModifier)
             pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
                 irCall(getModifierThenFunction()).apply {
-                    IrMemberAccessExpression.extensionReceiver = existingModifier
-                    IrMemberAccessExpression.putValueArgument(0, newModifier)
+                    extensionReceiver = existingModifier
+                    putValueArgument(0, newModifier)
                 }
             }
         } else {

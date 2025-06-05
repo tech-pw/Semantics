@@ -1,3 +1,5 @@
+package io.github.farhazulmullick.compiler
+
 import com.google.auto.service.AutoService
 import org.jetbrains.kotlin.compiler.plugin.AbstractCliOption
 import org.jetbrains.kotlin.compiler.plugin.CliOption

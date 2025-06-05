@@ -7,6 +7,7 @@ plugins {
 
 group = "io.github.farhazulmullick"
 version = "1.0.0"
+val mArtifactId = "semantics-gradle-plugin"
 
 tasks.register("sourcesJar", Jar::class) {
     archiveClassifier.set("sources")
@@ -20,7 +21,7 @@ publishing {
             from(components["java"])
 
             artifact(tasks["sourcesJar"])
-            artifactId = "semantics-gradle-plugin"
+            artifactId = mArtifactId
 
             pom {
                 name.set("Semantics Gradle Plugin")
@@ -62,8 +63,8 @@ dependencies {
 gradlePlugin {
     plugins {
         create("semanticsPlugin") {
-            id = "io.github.farhazulmullick.sementics-gradle-plugin"
-            implementationClass = "io.github.farhazul.gradle.SemanticsGradlePlugin"
+            id = "io.github.farhazulmullick.semantics-gradle-plugin"
+            implementationClass = "io.github.farhazul.gradlee.SemanticsGradlePlugin"
         }
     }
 }

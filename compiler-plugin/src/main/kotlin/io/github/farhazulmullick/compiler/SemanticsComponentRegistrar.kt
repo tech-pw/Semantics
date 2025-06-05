@@ -1,3 +1,6 @@
+package io.github.farhazulmullick.compiler
+
+import io.github.farhazulmullick.compiler.SemanticsIrGenerationExtension
 import com.google.auto.service.AutoService
 import org.jetbrains.kotlin.backend.common.extensions.IrGenerationExtension
 import org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar
@@ -14,7 +17,7 @@ class SemanticsComponentRegistrar : CompilerPluginRegistrar() {
         val testTagPrefix = configuration.get(ComposeTaggerCommandLineProcessor.ARG_TEST_TAG_PREFIX, "")
         val autoGenerate = configuration.get(ComposeTaggerCommandLineProcessor.ARG_AUTO_GENERATE, true)
 
-        IrGenerationExtension.registerExtension(
+        IrGenerationExtension.Companion.registerExtension(
             SemanticsIrGenerationExtension(testTagPrefix, autoGenerate)
         )
     }

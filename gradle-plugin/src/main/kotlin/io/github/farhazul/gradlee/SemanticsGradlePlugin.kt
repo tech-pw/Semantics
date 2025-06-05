@@ -1,4 +1,4 @@
-package io.github.farhazul.gradle
+package io.github.farhazul.gradlee
 
 import org.gradle.api.Project
 import org.gradle.api.provider.Provider
@@ -6,7 +6,6 @@ import org.jetbrains.kotlin.gradle.plugin.KotlinCompilation
 import org.jetbrains.kotlin.gradle.plugin.KotlinCompilerPluginSupportPlugin
 import org.jetbrains.kotlin.gradle.plugin.SubpluginArtifact
 import org.jetbrains.kotlin.gradle.plugin.SubpluginOption
-import kotlin.jvm.java
 
 class SemanticsGradlePlugin : KotlinCompilerPluginSupportPlugin {
     override fun apply(target: Project) {
@@ -14,11 +13,11 @@ class SemanticsGradlePlugin : KotlinCompilerPluginSupportPlugin {
     }
     override fun isApplicable(kotlinCompilation: KotlinCompilation<*>): Boolean = true
 
-    override fun getCompilerPluginId(): String = "io.github.farhazulmullick.sementics-gradle-plugin"
+    override fun getCompilerPluginId(): String = "io.github.farhazulmullick.semantics-compiler-plugin"
 
     override fun getPluginArtifact(): SubpluginArtifact = SubpluginArtifact(
         groupId = "io.github.farhazulmullick",
-        artifactId = "sementics-gradle-plugin",
+        artifactId = "semantics-compiler-plugin",  // Changed to compiler plugin
         version = "1.0.0"
     )
 
