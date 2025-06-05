@@ -1,4 +1,4 @@
-package io.github.farhazul.gradlee
+package io.github.farhazulmullick.gradlee
 
 import org.gradle.api.Project
 import org.gradle.api.provider.Provider

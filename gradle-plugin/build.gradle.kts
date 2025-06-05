@@ -64,7 +64,7 @@ gradlePlugin {
     plugins {
         create("semanticsPlugin") {
             id = "io.github.farhazulmullick.semantics-gradle-plugin"
-            implementationClass = "io.github.farhazul.gradlee.SemanticsGradlePlugin"
+            implementationClass = "io.github.farhazulmullick.gradlee.SemanticsGradlePlugin"
         }
     }
 }
