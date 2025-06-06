@@ -1,7 +1,6 @@
 package io.github.farhazulmullick.compiler.transformer
 
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
-import org.jetbrains.kotlin.backend.common.extensions.FirIncompatiblePluginAPI
 import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
@@ -26,8 +25,10 @@ import org.jetbrains.kotlin.ir.types.IrSimpleType
 import org.jetbrains.kotlin.ir.types.classFqName
 import org.jetbrains.kotlin.ir.types.defaultType
 import org.jetbrains.kotlin.ir.types.typeWith
+import org.jetbrains.kotlin.ir.util.dump
 import org.jetbrains.kotlin.ir.util.hasAnnotation
 import org.jetbrains.kotlin.ir.util.kotlinFqName
+import org.jetbrains.kotlin.ir.util.patchDeclarationParents
 import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
@@ -39,6 +40,10 @@ class SemanticsIrTransformer(
     private val autoGenerate: Boolean
 ) : IrElementTransformerVoidWithContext() {
 
+    companion object {
+        val TAG= "SemanticsIrTransformer"
+    }
+
     private val composableAnnotation = FqName("androidx.compose.runtime.Composable")
     private val modifierClass = FqName("androidx.compose.ui.Modifier")
     private val semanticsFunction = FqName("androidx.compose.ui.semantics.semantics")
@@ -48,7 +53,6 @@ class SemanticsIrTransformer(
         if (!declaration.hasAnnotation(composableAnnotation)) {
             return super.visitFunctionNew(declaration)
         }
-
         // Transform the function body
         declaration.transformChildrenVoid()
 
@@ -60,7 +64,10 @@ class SemanticsIrTransformer(
 
         // Check if this is a Composable function call that might need semantics
         if (shouldAddSemantics(transformedCall)) {
-            return addSemanticsModifier(transformedCall)
+            println("$TAG Before adding Semantics:: ${transformedCall.dump()}")
+            val expression = addSemanticsModifier(transformedCall)
+            println("$TAG After adding Semantics:: ${expression.dump()}")
+            return expression
         }
 
         return transformedCall
@@ -71,7 +78,6 @@ class SemanticsIrTransformer(
         // Check if it's a Composable function
         val function = call.symbol.owner
         if (!function.hasAnnotation(composableAnnotation)) return false
-
         // Check if it already has a Modifier parameter with semantics
         if (hasExistingSemantics(call)) return false
 
@@ -134,13 +140,15 @@ class SemanticsIrTransformer(
     }
 
     private fun findModifierParameter(call: IrCall): Int {
-        val function = call.symbol.owner
+        val function: IrSimpleFunction = call.symbol.owner
         for (i in 0 until function.valueParameters.size) {
             val param = function.valueParameters[i]
             if (param.type.classFqName == modifierClass) {
+                println("$TAG findModifierParameter, found at index ${i}")
                 return i
             }
         }
+        println("$TAG findModifierParameter, Not found")
         return -1
     }
 
@@ -158,18 +166,18 @@ class SemanticsIrTransformer(
             // Create: Modifier.semantics { testTagsAsResourceId = true; testTag = "..." }
             irCall(getSemanticsFunction()).apply {
                 // Receiver (Modifier)
-                extensionReceiver = irGetObjectValue(
-                    type = getModifierCompanion().defaultType,
-                    classSymbol = getModifierCompanion()
-                )
-
+                insertExtensionReceiver(irGetObjectValue(
+                    type = getModifierClass().defaultType,
+                    classSymbol = getModifierClass()
+                ))
                 // Lambda parameter
-                putValueArgument(0, createSemanticsLambda(testTag))
+                putValueArgument(0, irBoolean(false)) // mergeDescendants = false
+                putValueArgument(1, createSemanticsLambda(testTag))
             }
         }
     }
 
-    @OptIn(FirIncompatiblePluginAPI::class)
+    @OptIn(UnsafeDuringIrConstructionAPI::class)
     private fun createSemanticsLambda(testTag: String): IrExpression {
         val unitType = pluginContext.irBuiltIns.unitType
         val semanticsPropertyReceiverClass = getSemanticsPropertyReceiverClass()
@@ -179,40 +187,58 @@ class SemanticsIrTransformer(
         )
 
         val irFactory = pluginContext.irFactory
+
+        // Create lambda function with proper parent setup
         val lambdaFun = irFactory.buildFun {
             name = Name.special("<anonymous>")
             returnType = unitType
             visibility = DescriptorVisibilities.LOCAL
             origin = IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA
         }.apply {
+            // CRITICAL FIX 1: Set parent to current context
+            parent = currentClass?.irElement as? IrClass ?: currentFunction?.irElement as IrFunction
+
             // Add receiver parameter
             val receiverParam = addValueParameter {
                 name = Name.identifier("receiver")
                 type = semanticsPropertyReceiverClass.defaultType
                 origin = IrDeclarationOrigin.DEFINED
             }
+            // CRITICAL FIX 2: Set parent for value parameter
+            receiverParam.parent = this
 
             // Lambda body
             body = pluginContext.irBuiltIns.createIrBuilder(symbol).irBlockBody {
                 // Set testTagsAsResourceId = true
                 +irCall(getTestTagsAsResourceIdField().owner.setter!!).apply {
-                    dispatchReceiver = irGet(receiverParam)
+                    insertDispatchReceiver(irGet(receiverParam))
                     putValueArgument(0, irBoolean(true))
                 }
                 // Set testTag = testTag
                 +irCall(getTestTagField().owner.setter!!).apply {
-                    dispatchReceiver = irGet(receiverParam)
+                    insertDispatchReceiver(irGet(receiverParam))
                     putValueArgument(0, irString(testTag))
                 }
             }
+
+            // CRITICAL FIX 3: Patch declaration parents
+            patchDeclarationParents(this)
         }
 
-        return IrFunctionExpressionImpl(
+        // Create the function expression
+        val functionExpression = IrFunctionExpressionImpl(
             UNDEFINED_OFFSET, UNDEFINED_OFFSET,
             functionType,
             lambdaFun,
             IrStatementOrigin.LAMBDA
         )
+
+        // CRITICAL FIX 4: Set proper parent for function expression
+        lambdaFun.parent = currentFunction?.irElement as? IrFunction
+            ?: currentClass?.irElement as? IrClass
+                    ?: error("No valid parent context found")
+
+        return functionExpression
     }
 
     private fun updateCallWithModifier(
@@ -220,13 +246,12 @@ class SemanticsIrTransformer(
         modifierParamIndex: Int,
         newModifier: IrExpression
     ): IrExpression {
-        val existingModifier = call.getValueArgument(modifierParamIndex)
-
+        val existingModifier = call.arguments[modifierParamIndex]
         val combinedModifier = if (existingModifier != null) {
             // Chain with existing modifier: existing Modifier.then(newModifier)
             pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
                 irCall(getModifierThenFunction()).apply {
-                    extensionReceiver = existingModifier
+                    insertDispatchReceiver(irGetObject(getModifierCompanionObj()))
                     putValueArgument(0, newModifier)
                 }
             }
@@ -281,7 +306,7 @@ class SemanticsIrTransformer(
     }
 
     @OptIn(UnsafeDuringIrConstructionAPI::class)
-    private fun getModifierCompanion(): IrClassSymbol {
+    private fun getModifierClass(): IrClassSymbol {
         val modifierClassId = ClassId(
             packageFqName = FqName("androidx.compose.ui"),
             relativeClassName = FqName("Modifier"),
@@ -294,27 +319,25 @@ class SemanticsIrTransformer(
         return modifierClassSymbol
     }
 
-    private fun getModifierThenFunction(): IrSimpleFunctionSymbol {
-        // Modifier.then()
-        val modifierClassId = ClassId(
-            packageFqName = FqName("androidx.compose.ui"),
-            relativeClassName = FqName("Modifier"),
-            isLocal = false
-        )
-
-        val modifierClassSymbol = pluginContext.referenceClass(modifierClassId)
-            ?: error("Modifier class not found")
-
+    private fun getModifierCompanionObj(): IrClassSymbol {
+        val modifierClassSymbol: IrClassSymbol = getModifierClass()
         val modifierCompanion: IrClass = modifierClassSymbol.owner.declarations
             .filterIsInstance<IrClass>()
             .firstOrNull { it.isCompanion }
             ?: error("Modifier.Companion not found")
 
+        return modifierCompanion.symbol
+    }
+
+    private fun getModifierThenFunction(): IrSimpleFunctionSymbol {
+        // Modifier.then()
         // Step 3: Find the `then` function inside the companion
-        val thenFunction = modifierCompanion.declarations
+        val thenFunction = getModifierCompanionObj().owner.declarations
             .filterIsInstance<IrSimpleFunction>()
             .firstOrNull { it.name.asString() == "then" }
             ?: error("Modifier.Companion.then() function not found")
+
+        println("$TAG :: foundThenFunction ${thenFunction.dump()}")
 
         return thenFunction.symbol
     }
