@@ -7,27 +7,29 @@ import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
+import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.builders.declarations.addValueParameter
 import org.jetbrains.kotlin.ir.builders.declarations.buildFun
-import org.jetbrains.kotlin.ir.builders.irBlockBody
-import org.jetbrains.kotlin.ir.builders.irBoolean
-import org.jetbrains.kotlin.ir.builders.irCall
-import org.jetbrains.kotlin.ir.builders.irGet
-import org.jetbrains.kotlin.ir.builders.irString
+import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrFunction
+import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
-import org.jetbrains.kotlin.ir.expressions.IrMemberAccessExpression
 import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
 import org.jetbrains.kotlin.ir.expressions.impl.IrFunctionExpressionImpl
+import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
+import org.jetbrains.kotlin.ir.symbols.IrPropertySymbol
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
+import org.jetbrains.kotlin.ir.symbols.UnsafeDuringIrConstructionAPI
 import org.jetbrains.kotlin.ir.types.IrSimpleType
 import org.jetbrains.kotlin.ir.types.classFqName
 import org.jetbrains.kotlin.ir.types.defaultType
 import org.jetbrains.kotlin.ir.types.typeWith
 import org.jetbrains.kotlin.ir.util.hasAnnotation
 import org.jetbrains.kotlin.ir.util.kotlinFqName
+import org.jetbrains.kotlin.name.CallableId
+import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 
@@ -64,6 +66,7 @@ class SemanticsIrTransformer(
         return transformedCall
     }
 
+    @OptIn(UnsafeDuringIrConstructionAPI::class)
     private fun shouldAddSemantics(call: IrCall): Boolean {
         // Check if it's a Composable function
         val function = call.symbol.owner
@@ -155,7 +158,10 @@ class SemanticsIrTransformer(
             // Create: Modifier.semantics { testTagsAsResourceId = true; testTag = "..." }
             irCall(getSemanticsFunction()).apply {
                 // Receiver (Modifier)
-                extensionReceiver = irCall(getModifierCompanion())
+                extensionReceiver = irGetObjectValue(
+                    type = getModifierCompanion().defaultType,
+                    classSymbol = getModifierCompanion()
+                )
 
                 // Lambda parameter
                 putValueArgument(0, createSemanticsLambda(testTag))
@@ -165,11 +171,8 @@ class SemanticsIrTransformer(
 
     @OptIn(FirIncompatiblePluginAPI::class)
     private fun createSemanticsLambda(testTag: String): IrExpression {
-        val semanticsPropertyReceiverClass = pluginContext.referenceClass(
-            FqName("androidx.compose.ui.semantics.SemanticsPropertyReceiver")
-        ) ?: error("SemanticsPropertyReceiver class not found")
-
         val unitType = pluginContext.irBuiltIns.unitType
+        val semanticsPropertyReceiverClass = getSemanticsPropertyReceiverClass()
         val functionType: IrSimpleType = pluginContext.irBuiltIns.functionN(1).typeWith(
             semanticsPropertyReceiverClass.defaultType,
             unitType
@@ -220,7 +223,7 @@ class SemanticsIrTransformer(
         val existingModifier = call.getValueArgument(modifierParamIndex)
 
         val combinedModifier = if (existingModifier != null) {
-            // Chain with existing modifier: existingModifier.then(newModifier)
+            // Chain with existing modifier: existing Modifier.then(newModifier)
             pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
                 irCall(getModifierThenFunction()).apply {
                     extensionReceiver = existingModifier
@@ -258,27 +261,79 @@ class SemanticsIrTransformer(
     }
 
     // Helper functions to get symbols (these would need to be implemented based on your specific setup)
-    @OptIn(FirIncompatiblePluginAPI::class)
+
+    private fun getSemanticsPropertyReceiverClass(): IrClassSymbol {
+        val packageName = FqName("androidx.compose.ui.semantics")
+        val className = Name.identifier("SemanticsPropertyReceiver")
+        val classId = ClassId(packageName, className)
+
+        return pluginContext.referenceClass(classId)
+            ?: error("Could not find SemanticsPropertyReceiver class")
+    }
+
     private fun getSemanticsFunction(): IrSimpleFunctionSymbol {
-        return pluginContext.referenceFunctions(semanticsFunction).first()
+        val packageName = FqName("androidx.compose.ui.semantics")
+        val callableName = Name.identifier("semantics")
+        val callableId = CallableId(packageName, callableName)
+
+        return pluginContext.referenceFunctions(callableId).firstOrNull()
+            ?: error("Could not find semantics function: $semanticsFunction")
     }
 
-    @OptIn(FirIncompatiblePluginAPI::class)
-    private fun getModifierCompanion(): IrSimpleFunctionSymbol {
-        return pluginContext.
-        referenceFunctions(FqName("androidx.compose.ui.Modifier.Companion")).first()
+    @OptIn(UnsafeDuringIrConstructionAPI::class)
+    private fun getModifierCompanion(): IrClassSymbol {
+        val modifierClassId = ClassId(
+            packageFqName = FqName("androidx.compose.ui"),
+            relativeClassName = FqName("Modifier"),
+            isLocal = false
+        )
+
+        val modifierClassSymbol = pluginContext.referenceClass(modifierClassId)
+            ?: error("Modifier class not found")
+
+        return modifierClassSymbol
     }
 
-    @OptIn(FirIncompatiblePluginAPI::class)
     private fun getModifierThenFunction(): IrSimpleFunctionSymbol {
-        return pluginContext.referenceFunctions(FqName("androidx.compose.ui.Modifier.then")).first()
+        // Modifier.then()
+        val modifierClassId = ClassId(
+            packageFqName = FqName("androidx.compose.ui"),
+            relativeClassName = FqName("Modifier"),
+            isLocal = false
+        )
+
+        val modifierClassSymbol = pluginContext.referenceClass(modifierClassId)
+            ?: error("Modifier class not found")
+
+        val modifierCompanion: IrClass = modifierClassSymbol.owner.declarations
+            .filterIsInstance<IrClass>()
+            .firstOrNull { it.isCompanion }
+            ?: error("Modifier.Companion not found")
+
+        // Step 3: Find the `then` function inside the companion
+        val thenFunction = modifierCompanion.declarations
+            .filterIsInstance<IrSimpleFunction>()
+            .firstOrNull { it.name.asString() == "then" }
+            ?: error("Modifier.Companion.then() function not found")
+
+        return thenFunction.symbol
     }
 
-    @OptIn(FirIncompatiblePluginAPI::class)
-    private fun getTestTagsAsResourceIdField() =
-        pluginContext.referenceProperties(FqName("androidx.compose.ui.semantics.testTagsAsResourceId")).first()
+    private fun getTestTagsAsResourceIdField(): IrPropertySymbol {
+        val packageName = FqName("androidx.compose.ui.semantics")
+        val callableName = Name.identifier("testTagsAsResourceId")
+        val callableId = CallableId(packageName, callableName)
 
-    @OptIn(FirIncompatiblePluginAPI::class)
-    private fun getTestTagField() =
-        pluginContext.referenceProperties(FqName("androidx.compose.ui.semantics.testTag")).first()
+        return pluginContext.referenceProperties(callableId).firstOrNull()
+            ?: error("Could not find testTagsAsResourceId property")
+    }
+
+    private fun getTestTagField(): IrPropertySymbol {
+        val packageName = FqName("androidx.compose.ui.semantics")
+        val callableName = Name.identifier("testTag")
+        val callableId = CallableId(packageName, callableName)
+
+        return pluginContext.referenceProperties(callableId).firstOrNull()
+            ?: error("Could not find testTag property")
+    }
 }
