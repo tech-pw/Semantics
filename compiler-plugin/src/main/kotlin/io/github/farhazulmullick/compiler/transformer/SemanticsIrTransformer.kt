@@ -166,10 +166,10 @@ class SemanticsIrTransformer(
             // Create: Modifier.semantics { testTagsAsResourceId = true; testTag = "..." }
             irCall(getSemanticsFunction()).apply {
                 // Receiver (Modifier)
-                insertExtensionReceiver(irGetObjectValue(
+                extensionReceiver = irGetObjectValue(
                     type = getModifierClass().defaultType,
                     classSymbol = getModifierClass()
-                ))
+                )
                 // Lambda parameter
                 putValueArgument(0, irBoolean(false)) // mergeDescendants = false
                 putValueArgument(1, createSemanticsLambda(testTag))
@@ -195,37 +195,35 @@ class SemanticsIrTransformer(
             visibility = DescriptorVisibilities.LOCAL
             origin = IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA
         }.apply {
-            // CRITICAL FIX 1: Set parent to current context
+            // Set parent to current context with proper origin
             parent = currentClass?.irElement as? IrClass ?: currentFunction?.irElement as IrFunction
 
-            // Add receiver parameter
+            // Add receiver parameter with correct name and origin
             val receiverParam = addValueParameter {
                 name = Name.identifier("receiver")
                 type = semanticsPropertyReceiverClass.defaultType
                 origin = IrDeclarationOrigin.DEFINED
             }
-            // CRITICAL FIX 2: Set parent for value parameter
             receiverParam.parent = this
 
-            // Lambda body
+            // Lambda body with proper origin
             body = pluginContext.irBuiltIns.createIrBuilder(symbol).irBlockBody {
                 // Set testTagsAsResourceId = true
                 +irCall(getTestTagsAsResourceIdField().owner.setter!!).apply {
-                    insertDispatchReceiver(irGet(receiverParam))
+                    dispatchReceiver = irGet(receiverParam)
                     putValueArgument(0, irBoolean(true))
                 }
                 // Set testTag = testTag
                 +irCall(getTestTagField().owner.setter!!).apply {
-                    insertDispatchReceiver(irGet(receiverParam))
+                    dispatchReceiver = irGet(receiverParam)
                     putValueArgument(0, irString(testTag))
                 }
             }
 
-            // CRITICAL FIX 3: Patch declaration parents
-            patchDeclarationParents(this)
+            patchDeclarationParents()
         }
 
-        // Create the function expression
+        // Create the function expression with proper origin
         val functionExpression = IrFunctionExpressionImpl(
             UNDEFINED_OFFSET, UNDEFINED_OFFSET,
             functionType,
@@ -233,11 +231,8 @@ class SemanticsIrTransformer(
             IrStatementOrigin.LAMBDA
         )
 
-        // CRITICAL FIX 4: Set proper parent for function expression
-        lambdaFun.parent = currentFunction?.irElement as? IrFunction
-            ?: currentClass?.irElement as? IrClass
-                    ?: error("No valid parent context found")
-
+        // Set proper parent for function expression
+        lambdaFun.parent = this@SemanticsIrTransformer.currentFile
         return functionExpression
     }
 
@@ -246,12 +241,13 @@ class SemanticsIrTransformer(
         modifierParamIndex: Int,
         newModifier: IrExpression
     ): IrExpression {
-        val existingModifier = call.arguments[modifierParamIndex]
+        val existingModifier: IrExpression? = call.getValueArgument(modifierParamIndex)
         val combinedModifier = if (existingModifier != null) {
             // Chain with existing modifier: existing Modifier.then(newModifier)
             pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
                 irCall(getModifierThenFunction()).apply {
-                    insertDispatchReceiver(irGetObject(getModifierCompanionObj()))
+                    // Use COMPOSITE type with DEFAULT_VALUE origin for receiver
+                    extensionReceiver = existingModifier
                     putValueArgument(0, newModifier)
                 }
             }
