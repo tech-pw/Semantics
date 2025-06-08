@@ -135,7 +135,7 @@ class SemanticsIrTransformer(
         val testTag = generateTestTag(functionName)
 
         // Create the semantics modifier
-        val semanticsModifier = createSemanticsModifier2(call, testTag, parentModifier)
+        val semanticsModifier = createSemanticsModifier(call, testTag, parentModifier)
 
         // Update the call with the new modifier
         return call.copyWithNewModifier(modifierParamIndex, semanticsModifier)
@@ -163,57 +163,13 @@ class SemanticsIrTransformer(
         return baseTag
     }
 
-    private fun updateCallWithModifier(
-        call: IrCall,
-        modifierParamIndex: Int,
-        newModifier: IrExpression
-    ): IrExpression {
-        val existingModifier: IrExpression? = call.getValueArgument(modifierParamIndex)
-        val existingModifierDump = existingModifier?.dump()
-
-        println("$TAG updateCallWithModifier :: existingModifierDump $existingModifierDump")
-        val baseModifier: IrExpression = if (
-            existingModifier == null ||
-            existingModifierDump?.contains("DEFAULT_VALUE") == true ||
-            existingModifierDump?.contains("value=null") == true
-        ) {
-            pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
-                irGetObjectValue(
-                    type = getModifierCompanionObj().defaultType,
-                    classSymbol = getModifierCompanionObj()
-                )
-            }
-        } else existingModifier
-
-        println("$TAG updateCallWithModifier :: baseModifier ${baseModifier.dump()}")
-
-        val combinedModifier = if (existingModifier != null) {
-            println("$TAG updateCallWithModifier ${existingModifier.dump()}")
-            // Chain with existing modifier: existing Modifier.then(newModifier)
-            pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
-                irCall(getModifierThenFunction()).apply {
-                    // Use Modifier.Companion as receiver
-                    dispatchReceiver = existingModifier
-                    putValueArgument(0, newModifier)
-                }
-            }
-        } else {
-            newModifier
-        }
-
-        // Create new call with updated modifier
-        return call.copyWithNewModifier(modifierParamIndex, newModifier)
-    }
-
-    private fun createSemanticsModifier2(
+    private fun createSemanticsModifier(
         call: IrCall,
         testTag: String,
         parentModifier: IrExpression? // parent modifier for chaining.
     ): IrExpression {
-
         val parentModifierDump: String? = parentModifier?.dump()
-
-        println("$TAG createSemanticsModifier2 :: parentModifierDump $parentModifierDump")
+        println("$TAG createSemanticsModifier :: parentModifierDump $parentModifierDump")
         val baseModifier: IrExpression = if (
             parentModifier == null ||
             parentModifierDump?.contains("DEFAULT_VALUE") == true ||
@@ -227,29 +183,13 @@ class SemanticsIrTransformer(
             }
         } else parentModifier
 
-        println("$TAG createSemanticsModifier2 :: baseModifierDump ${baseModifier.dump()}")
+        println("$TAG createSemanticsModifier :: baseModifierDump ${baseModifier.dump()}")
 
         return pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
             // Create: Modifier.semantics { testTagsAsResourceId = true; testTag = "..." }
             irCall(getSemanticsFunction()).apply {
                 // Use Modifier.Companion as receiver
                 extensionReceiver = baseModifier
-                // Lambda parameter
-                putValueArgument(0, irBoolean(false)) // mergeDescendants = false
-                putValueArgument(1, createSemanticsLambda(testTag))
-            }
-        }
-    }
-
-    private fun createSemanticsModifier(call: IrCall, testTag: String): IrExpression {
-        return pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
-            // Create: Modifier.semantics { testTagsAsResourceId = true; testTag = "..." }
-            irCall(getSemanticsFunction()).apply {
-                // Use Modifier.Companion as receiver
-                extensionReceiver = irGetObjectValue(
-                    type = getModifierCompanionObj().defaultType,
-                    classSymbol = getModifierCompanionObj()
-                )
                 // Lambda parameter
                 putValueArgument(0, irBoolean(false)) // mergeDescendants = false
                 putValueArgument(1, createSemanticsLambda(testTag))
