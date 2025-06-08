@@ -63,8 +63,8 @@ class SemanticsIrTransformer(
         val transformedCall = super.visitCall(expression) as IrCall
 
         // Check if this is a Composable function call that might need semantics
+        //println("$TAG -> ${transformedCall.dump()}")
         if (shouldAddSemantics(transformedCall)) {
-            println("$TAG Before adding Semantics:: ${transformedCall.dump()}")
             val expression = addSemanticsModifier(transformedCall)
             println("$TAG After adding Semantics:: ${expression.dump()}")
             return expression
@@ -79,7 +79,7 @@ class SemanticsIrTransformer(
         val function = call.symbol.owner
         if (!function.hasAnnotation(composableAnnotation)) return false
         // Check if it already has a Modifier parameter with semantics
-        if (hasExistingSemantics(call)) return false
+        if (hasExistingSemantics(call)) return true
 
         // Check if it's a UI component that should have semantics
         return isUiComponent(function)
@@ -161,14 +161,40 @@ class SemanticsIrTransformer(
         return baseTag
     }
 
+    private fun updateCallWithModifier(
+        call: IrCall,
+        modifierParamIndex: Int,
+        newModifier: IrExpression
+    ): IrExpression {
+        val existingModifier: IrExpression? = call.getValueArgument(modifierParamIndex)
+        val combinedModifier = if (existingModifier != null) {
+            // Chain with existing modifier: existing Modifier.then(newModifier)
+            pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
+                irCall(getModifierThenFunction()).apply {
+                    // Use Modifier.Companion as receiver
+                    dispatchReceiver = irGetObjectValue(
+                        type = getModifierCompanionObj().defaultType,
+                        classSymbol = getModifierCompanionObj()
+                    )
+                    putValueArgument(0, newModifier)
+                }
+            }
+        } else {
+            newModifier
+        }
+
+        // Create new call with updated modifier
+        return call.copyWithNewModifier(modifierParamIndex, combinedModifier)
+    }
+
     private fun createSemanticsModifier(call: IrCall, testTag: String): IrExpression {
         return pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
             // Create: Modifier.semantics { testTagsAsResourceId = true; testTag = "..." }
             irCall(getSemanticsFunction()).apply {
-                // Receiver (Modifier)
+                // Use Modifier.Companion as receiver
                 extensionReceiver = irGetObjectValue(
-                    type = getModifierClass().defaultType,
-                    classSymbol = getModifierClass()
+                    type = getModifierCompanionObj().defaultType,
+                    classSymbol = getModifierCompanionObj()
                 )
                 // Lambda parameter
                 putValueArgument(0, irBoolean(false)) // mergeDescendants = false
@@ -210,12 +236,12 @@ class SemanticsIrTransformer(
             body = pluginContext.irBuiltIns.createIrBuilder(symbol).irBlockBody {
                 // Set testTagsAsResourceId = true
                 +irCall(getTestTagsAsResourceIdField().owner.setter!!).apply {
-                    dispatchReceiver = irGet(receiverParam)
+                    extensionReceiver = irGet(receiverParam)
                     putValueArgument(0, irBoolean(true))
                 }
                 // Set testTag = testTag
                 +irCall(getTestTagField().owner.setter!!).apply {
-                    dispatchReceiver = irGet(receiverParam)
+                    extensionReceiver = irGet(receiverParam)
                     putValueArgument(0, irString(testTag))
                 }
             }
@@ -234,29 +260,6 @@ class SemanticsIrTransformer(
         // Set proper parent for function expression
         lambdaFun.parent = this@SemanticsIrTransformer.currentFile
         return functionExpression
-    }
-
-    private fun updateCallWithModifier(
-        call: IrCall,
-        modifierParamIndex: Int,
-        newModifier: IrExpression
-    ): IrExpression {
-        val existingModifier: IrExpression? = call.getValueArgument(modifierParamIndex)
-        val combinedModifier = if (existingModifier != null) {
-            // Chain with existing modifier: existing Modifier.then(newModifier)
-            pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
-                irCall(getModifierThenFunction()).apply {
-                    // Use COMPOSITE type with DEFAULT_VALUE origin for receiver
-                    extensionReceiver = existingModifier
-                    putValueArgument(0, newModifier)
-                }
-            }
-        } else {
-            newModifier
-        }
-
-        // Create new call with updated modifier
-        return call.copyWithNewModifier(modifierParamIndex, combinedModifier)
     }
 
     private fun IrCall.copyWithNewModifier(
