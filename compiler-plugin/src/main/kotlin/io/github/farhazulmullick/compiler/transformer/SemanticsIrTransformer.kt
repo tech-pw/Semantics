@@ -34,8 +34,7 @@ import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
-import java.util.ArrayDeque
-import java.util.Deque
+import java.util.LinkedList
 
 class SemanticsIrTransformer(
     private val pluginContext: IrPluginContext,
@@ -45,16 +44,18 @@ class SemanticsIrTransformer(
 
     companion object {
         val TAG= "SemanticsIrTransformer"
+        private const val COMPOSABLE_ANNOTATION = "androidx.compose.runtime.Composable"
+        private const val MODIFIER_CLASS = "androidx.compose.ui.Modifier"
+        private const val SEMANTICS_FUNC = "androidx.compose.ui.semantics.semantics"
     }
 
-    private val composableAnnotation = FqName("androidx.compose.runtime.Composable")
-    private val modifierClass = FqName("androidx.compose.ui.Modifier")
-    private val modifierCompanionClass = FqName("androidx.compose.ui.Modifier")
-    private val semanticsFunction = FqName("androidx.compose.ui.semantics.semantics")
+    private val composableAnnotation = FqName(COMPOSABLE_ANNOTATION)
+    private val modifierClass = FqName(MODIFIER_CLASS)
+    private val semanticsFunction = FqName(SEMANTICS_FUNC)
 
     // Map to store instance counts for fully qualified hierarchical tags
     private val instanceCounts = mutableMapOf<String, Int>()
-    private val callStack: Deque<IrCall> = ArrayDeque()
+    private val callQueue: LinkedList<IrCall> = LinkedList()
 
     override fun visitFunctionNew(declaration: IrFunction): IrStatement {
         // Only process Composable functions
@@ -68,18 +69,18 @@ class SemanticsIrTransformer(
     }
 
     override fun visitCall(expression: IrCall): IrExpression {
-        callStack.push(expression) // Push the current call onto the stack
+        callQueue.addLast(expression) // Push the current call onto the stack
         val transformedCall = super.visitCall(expression) as IrCall
 
         // Check if this is a Composable function call that might need semantics
         if (shouldAddSemantics(transformedCall)) {
             val expression = addSemanticsModifier(transformedCall)
             println("$TAG After adding Semantics:: ${expression.dump()}")
-            callStack.pop() // Pop the call after processing
+            callQueue.removeLast() // Pop the call after processing
             return expression
         }
 
-        callStack.pop() // Pop the call if no transformation was applied
+        callQueue.removeLast() // Pop the call if no transformation was applied
         return transformedCall
     }
 
@@ -173,12 +174,12 @@ class SemanticsIrTransformer(
 
         // Iterate through the custom callStack (excluding the current call itself)
         // This gives us the hierarchical chain of COMPOSABLE CALLS
-        val currentCallIndex = callStack.indexOf(this) // Find current call in stack
+        val currentCallIndex = callQueue.indexOf(this) // Find current call in stack
         val relevantCalls = if (currentCallIndex >= 0) {
             // Get parents in order from outermost to innermost
             // The subList range is (fromIndex, toIndex), so to get elements *before* currentCallIndex
             // (i.e., parents), and then reverse them for outermost to innermost order.
-            callStack.toList().subList(currentCallIndex + 1, callStack.size).reversed()
+            callQueue.toList().subList(0, currentCallIndex + 1)
         } else {
             emptyList()
         }
@@ -317,10 +318,11 @@ class SemanticsIrTransformer(
 
         // Create the function expression with proper origin
         val functionExpression = IrFunctionExpressionImpl(
-            UNDEFINED_OFFSET, UNDEFINED_OFFSET,
-            functionType,
-            lambdaFun,
-            IrStatementOrigin.LAMBDA
+            startOffset = UNDEFINED_OFFSET,
+            endOffset = UNDEFINED_OFFSET,
+            type = functionType,
+            function = lambdaFun,
+            origin = IrStatementOrigin.LAMBDA
         )
 
         // Set proper parent for function expression
@@ -399,19 +401,6 @@ class SemanticsIrTransformer(
             ?: error("Modifier.Companion not found")
 
         return modifierCompanion.symbol
-    }
-
-    private fun getModifierThenFunction(): IrSimpleFunctionSymbol {
-        // Modifier.then()
-        // Step 3: Find the `then` function inside the companion
-        val thenFunction = getModifierCompanionObj().owner.declarations
-            .filterIsInstance<IrSimpleFunction>()
-            .firstOrNull { it.name.asString() == "then" }
-            ?: error("Modifier.Companion.then() function not found")
-
-        println("$TAG :: foundThenFunction ${thenFunction.dump()}")
-
-        return thenFunction.symbol
     }
 
     private fun getTestTagsAsResourceIdField(): IrPropertySymbol {
