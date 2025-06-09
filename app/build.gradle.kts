@@ -2,7 +2,13 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    //id("io.github.farhazulmullick.semantics-gradle-plugin") version "1.0.0"
+    id("io.github.farhazulmullick.semantics-gradle-plugin") version "1.0.0"
+}
+
+semanticsConfig {
+    enabled = true
+    testTagPrefix = "login"
+    autoGenerate = true
 }
 
 android {
@@ -36,6 +42,7 @@ android {
         compose = true
     }
 }
+
 
 dependencies {
 
