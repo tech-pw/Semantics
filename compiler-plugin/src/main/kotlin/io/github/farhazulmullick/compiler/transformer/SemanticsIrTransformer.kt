@@ -13,6 +13,7 @@ import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrFunction
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
+import org.jetbrains.kotlin.ir.declarations.name
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
@@ -33,6 +34,10 @@ import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
+
+object MetaDataManager {
+    val fileComposableCounters = HashMap<String, HashMap<String, Int>>()
+}
 
 class SemanticsIrTransformer(
     private val pluginContext: IrPluginContext,
@@ -66,7 +71,7 @@ class SemanticsIrTransformer(
         // Check if this is a Composable function call that might need semantics
         //println("$TAG -> ${transformedCall.dump()}")
         if (shouldAddSemantics(transformedCall)) {
-            val expression = addSemanticsModifier(transformedCall)
+            val expression: IrExpression = addSemanticsModifier(transformedCall)
             println("$TAG After adding Semantics:: ${expression.dump()}")
             return expression
         }
@@ -131,8 +136,7 @@ class SemanticsIrTransformer(
         if (modifierParamIndex == -1) return call
         val parentModifier: IrExpression? = call.getValueArgument(modifierParamIndex)
 
-        val functionName = call.symbol.owner.name.asString()
-        val testTag = generateTestTag(functionName)
+        val testTag: String = call.generateStableTag()
 
         // Create the semantics modifier
         val semanticsModifier = createSemanticsModifier(call, testTag, parentModifier)
@@ -161,6 +165,15 @@ class SemanticsIrTransformer(
             "${functionName.lowercase()}_test_tag"
         }
         return baseTag
+    }
+    private fun IrCall.generateStableTag(): String {
+        println("$TAG generateStableTag :: fileComposableCounters = ${MetaDataManager.fileComposableCounters.hashCode()}")
+        val fileName = currentFile?.name ?: "UnknownFile"
+        val functionName = symbol.owner.name.asString()
+        val fileMap = MetaDataManager.fileComposableCounters.getOrPut(fileName) { HashMap() }
+        val count = (fileMap[functionName] ?: 0) + 1
+        fileMap[functionName] = count
+        return "auto_${testTagPrefix}_${fileName}_${functionName}_$count"
     }
 
     private fun createSemanticsModifier(
@@ -252,7 +265,14 @@ class SemanticsIrTransformer(
         )
 
         // Set proper parent for function expression
-        lambdaFun.parent = this@SemanticsIrTransformer.currentFile
+        val parentDeclaration = when {
+            currentClass?.irElement is IrClass -> currentClass!!.irElement as IrClass
+            currentFunction?.irElement is IrFunction -> currentFunction!!.irElement as IrFunction
+            else -> null // Do not assign parent if not a class or function
+        }
+        if (parentDeclaration != null) {
+            lambdaFun.parent = parentDeclaration
+        }
         return functionExpression
     }
 
