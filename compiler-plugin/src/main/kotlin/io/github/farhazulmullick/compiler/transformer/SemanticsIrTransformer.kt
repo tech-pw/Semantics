@@ -6,6 +6,7 @@ import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
 import org.jetbrains.kotlin.descriptors.DescriptorVisibilities
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
+import org.jetbrains.kotlin.ir.backend.js.utils.nameWithoutExtension
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.builders.declarations.addValueParameter
 import org.jetbrains.kotlin.ir.builders.declarations.buildFun
@@ -13,7 +14,6 @@ import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrFunction
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
-import org.jetbrains.kotlin.ir.declarations.name
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
@@ -34,10 +34,8 @@ import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.name.ClassId
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
-
-object MetaDataManager {
-    val fileComposableCounters = HashMap<String, HashMap<String, Int>>()
-}
+import java.util.ArrayDeque
+import java.util.Deque
 
 class SemanticsIrTransformer(
     private val pluginContext: IrPluginContext,
@@ -54,6 +52,10 @@ class SemanticsIrTransformer(
     private val modifierCompanionClass = FqName("androidx.compose.ui.Modifier")
     private val semanticsFunction = FqName("androidx.compose.ui.semantics.semantics")
 
+    // Map to store instance counts for fully qualified hierarchical tags
+    private val instanceCounts = mutableMapOf<String, Int>()
+    private val callStack: Deque<IrCall> = ArrayDeque()
+
     override fun visitFunctionNew(declaration: IrFunction): IrStatement {
         // Only process Composable functions
         if (!declaration.hasAnnotation(composableAnnotation)) {
@@ -66,16 +68,18 @@ class SemanticsIrTransformer(
     }
 
     override fun visitCall(expression: IrCall): IrExpression {
+        callStack.push(expression) // Push the current call onto the stack
         val transformedCall = super.visitCall(expression) as IrCall
 
         // Check if this is a Composable function call that might need semantics
-        //println("$TAG -> ${transformedCall.dump()}")
         if (shouldAddSemantics(transformedCall)) {
-            val expression: IrExpression = addSemanticsModifier(transformedCall)
+            val expression = addSemanticsModifier(transformedCall)
             println("$TAG After adding Semantics:: ${expression.dump()}")
+            callStack.pop() // Pop the call after processing
             return expression
         }
 
+        callStack.pop() // Pop the call if no transformation was applied
         return transformedCall
     }
 
@@ -136,6 +140,7 @@ class SemanticsIrTransformer(
         if (modifierParamIndex == -1) return call
         val parentModifier: IrExpression? = call.getValueArgument(modifierParamIndex)
 
+        // val functionName = call.symbol.owner.name.asString()
         val testTag: String = call.generateStableTag()
 
         // Create the semantics modifier
@@ -158,22 +163,76 @@ class SemanticsIrTransformer(
         return -1
     }
 
-    private fun generateTestTag(functionName: String): String {
-        val baseTag = if (testTagPrefix.isNotEmpty()) {
-            "${testTagPrefix}_${functionName.lowercase()}_test_tag"
-        } else {
-            "${functionName.lowercase()}_test_tag"
-        }
-        return baseTag
-    }
     private fun IrCall.generateStableTag(): String {
-        println("$TAG generateStableTag :: fileComposableCounters = ${MetaDataManager.fileComposableCounters.hashCode()}")
-        val fileName = currentFile?.name ?: "UnknownFile"
-        val functionName = symbol.owner.name.asString()
-        val fileMap = MetaDataManager.fileComposableCounters.getOrPut(fileName) { HashMap() }
-        val count = (fileMap[functionName] ?: 0) + 1
-        fileMap[functionName] = count
-        return "auto_${testTagPrefix}_${fileName}_${functionName}_$count"
+        val calledComposableName = symbol.owner.name.asString()
+        val fileName = currentFile?.nameWithoutExtension ?: "UnknownFile"
+
+        val pathComponents = mutableListOf<String>()
+        println("$TAG --- Starting generateStableTag for '$calledComposableName' in file '$fileName' ---")
+        println("$TAG   Inspecting callStack (from top/deepest to bottom/outermost):")
+
+        // Iterate through the custom callStack (excluding the current call itself)
+        // This gives us the hierarchical chain of COMPOSABLE CALLS
+        val currentCallIndex = callStack.indexOf(this) // Find current call in stack
+        val relevantCalls = if (currentCallIndex >= 0) {
+            // Get parents in order from outermost to innermost
+            // The subList range is (fromIndex, toIndex), so to get elements *before* currentCallIndex
+            // (i.e., parents), and then reverse them for outermost to innermost order.
+            callStack.toList().subList(currentCallIndex + 1, callStack.size).reversed()
+        } else {
+            emptyList()
+        }
+
+        for (parentCall in relevantCalls) {
+            val parentFunctionName = parentCall.symbol.owner.name.asString()
+            val parentIsComposable = parentCall.symbol.owner.hasAnnotation(composableAnnotation)
+            val parentOrigin = parentCall.origin
+            val parentType = parentCall.type.classFqName
+
+            println("$TAG     Parent Call details: Name='$parentFunctionName' | Type=$parentType | IsComposable=$parentIsComposable | Origin=$parentOrigin")
+
+            // Filter out compiler-generated anonymous call names or internal functions.
+            // These are often internal Compose lambdas and should not be part of the stable tag path.
+            val isCompilerGeneratedAnonymousCall = parentFunctionName.contains("<anonymous>") ||
+                                                   parentFunctionName.contains("<no name provided>") ||
+                                                   parentFunctionName.startsWith("invoke") ||
+                                                   parentOrigin == IrStatementOrigin.LAMBDA ||
+                                                   parentOrigin == IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA
+
+            println("$TAG       Filtering decision: isCompilerGeneratedAnonymousCall=$isCompilerGeneratedAnonymousCall, parentIsComposable=$parentIsComposable")
+
+            if (!isCompilerGeneratedAnonymousCall && parentIsComposable) {
+                pathComponents.add(parentFunctionName)
+                println("$TAG       *** ADDED to pathComponents: $parentFunctionName ***")
+            } else {
+                println("$TAG       SKIPPING this parent call. Reason: isCompilerGeneratedAnonymousCall=$isCompilerGeneratedAnonymousCall, parentIsComposable=$parentIsComposable")
+            }
+        }
+        println("$TAG generateStableTag :: pathComponents (before final tag build): $pathComponents")
+
+        val tagBuilder = StringBuilder()
+        tagBuilder.append("auto")
+
+        if (testTagPrefix.isNotEmpty()) {
+            tagBuilder.append("_").append(testTagPrefix)
+        }
+
+        tagBuilder.append("_").append(fileName)
+
+        for (component in pathComponents) {
+            tagBuilder.append("_").append(component)
+        }
+
+        tagBuilder.append("_").append(calledComposableName)
+
+        val baseTag = tagBuilder.toString()
+
+        val currentCount = instanceCounts.getOrDefault(baseTag, 0) + 1
+        instanceCounts[baseTag] = currentCount
+
+        println("$TAG Final generated tag for '$calledComposableName': '$baseTag' count: $currentCount -> '$baseTag'_'$currentCount'")
+        println("$TAG --- End generateStableTag for '$calledComposableName' ---")
+        return "${baseTag}_${currentCount}"
     }
 
     private fun createSemanticsModifier(
