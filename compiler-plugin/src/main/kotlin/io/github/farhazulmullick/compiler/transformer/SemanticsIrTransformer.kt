@@ -179,7 +179,7 @@ class SemanticsIrTransformer(
             // Get parents in order from outermost to innermost
             // The subList range is (fromIndex, toIndex), so to get elements *before* currentCallIndex
             // (i.e., parents), and then reverse them for outermost to innermost order.
-            callQueue.toList().subList(0, currentCallIndex + 1)
+            callQueue.toList().subList(0, currentCallIndex)
         } else {
             emptyList()
         }
