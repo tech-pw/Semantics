@@ -1,5 +1,6 @@
 package io.github.farhazulmullick.compiler.transformer
 
+import io.github.farhazulmullick.compiler.KtxNameConventions
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
@@ -14,11 +15,14 @@ import org.jetbrains.kotlin.ir.declarations.IrClass
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrFunction
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
+import org.jetbrains.kotlin.ir.declarations.IrValueParameter
 import org.jetbrains.kotlin.ir.expressions.IrCall
+import org.jetbrains.kotlin.ir.expressions.IrConst
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
 import org.jetbrains.kotlin.ir.expressions.impl.IrFunctionExpressionImpl
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
+import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrPropertySymbol
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.UnsafeDuringIrConstructionAPI
@@ -26,6 +30,7 @@ import org.jetbrains.kotlin.ir.types.IrSimpleType
 import org.jetbrains.kotlin.ir.types.classFqName
 import org.jetbrains.kotlin.ir.types.defaultType
 import org.jetbrains.kotlin.ir.types.typeWith
+import org.jetbrains.kotlin.ir.util.allParametersCount
 import org.jetbrains.kotlin.ir.util.dump
 import org.jetbrains.kotlin.ir.util.hasAnnotation
 import org.jetbrains.kotlin.ir.util.kotlinFqName
@@ -74,6 +79,7 @@ class SemanticsIrTransformer(
 
         // Check if this is a Composable function call that might need semantics
         if (shouldAddSemantics(transformedCall)) {
+            println("$TAG Before adding Semantics:: ${expression.dump()}")
             val expression = addSemanticsModifier(transformedCall)
             println("$TAG After adding Semantics:: ${expression.dump()}")
             callQueue.removeLast() // Pop the call after processing
@@ -130,25 +136,149 @@ class SemanticsIrTransformer(
         val functionName = function.name.asString()
         val commonUiComponents = setOf(
             "Button", "Text", "TextField", "Image", "Icon", "Card",
-            "Surface", "Box", "Row", "Column", "LazyColumn", "LazyRow"
+            "Surface", "Box", "Row", "Column", "LazyColumn", "LazyRow",
+            "BasicText"
         )
         return commonUiComponents.any { functionName.contains(it, ignoreCase = true) }
     }
 
     private fun addSemanticsModifier(call: IrCall): IrExpression {
-        // Find the modifier parameter
         val modifierParamIndex = findModifierParameter(call)
         if (modifierParamIndex == -1) return call
-        val parentModifier: IrExpression? = call.getValueArgument(modifierParamIndex)
 
-        // val functionName = call.symbol.owner.name.asString()
-        val testTag: String = call.generateStableTag()
+        val ownerFn = call.symbol.owner
+        val defaultInfo = getDefaultParameterInfo(call, ownerFn)
+        val isUsingDefault = isParameterUsingDefault(modifierParamIndex, defaultInfo)
+        
+        val parentModifier = call.getValueArgument(modifierParamIndex)
+        val testTag = call.generateStableTag()
+        val semanticsModifier = createSemanticsModifier(call, testTag, parentModifier, isUsingDefault)
+        
+        val newCall = call.copyWithNewModifier(modifierParamIndex, semanticsModifier)
+        
+        if (isUsingDefault) {
+            updateDefaultParameterMask(newCall, modifierParamIndex, defaultInfo)
+        }
+        
+        return newCall
+    }
 
-        // Create the semantics modifier
-        val semanticsModifier = createSemanticsModifier(call, testTag, parentModifier)
+    private data class DefaultParameterInfo(
+        val hasDefaults: Boolean,
+        val numContextParams: Int,
+        val numRealValueParams: Int,
+        val defaultMasks: List<Int>,
+        val defaultArgIndex: Int
+    )
 
-        // Update the call with the new modifier
-        return call.copyWithNewModifier(modifierParamIndex, semanticsModifier)
+    private fun getDefaultParameterInfo(call: IrCall, ownerFn: IrFunction): DefaultParameterInfo {
+        val hasDefaults = ownerFn.valueParameters.any { it.name == KtxNameConventions.DEFAULT_PARAMETER }
+        if (!hasDefaults) {
+            return DefaultParameterInfo(false, 0, 0, emptyList(), 0)
+        }
+
+        val numContextParams = ownerFn.contextReceiverParametersCount
+        val numRealValueParams = ownerFn.valueParameters.indexOfLast { !it.name.asString().startsWith('$') } + 1 - numContextParams
+        val numDefaults = defaultParamCount(numContextParams + numRealValueParams)
+        val defaultArgIndex = numContextParams + numRealValueParams + 1 + changedParamCount(numRealValueParams, ownerFn.allParametersCount)
+        
+        val defaultArgs = (defaultArgIndex until ownerFn.valueParameters.size).map { call.getValueArgument(it) }
+        val defaultMasks = defaultArgs.mapNotNull { arg ->
+            when (arg) {
+                is IrConst<*> -> {
+                    when (val value = arg.value) {
+                        is Int -> value
+                        is Long -> value.toInt()
+                        else -> {
+                            println("$TAG Unexpected default mask value type: ${value?.javaClass?.name}")
+                            null
+                        }
+                    }
+                }
+                else -> {
+                    println("$TAG Unexpected default mask type: ${arg?.javaClass?.name}")
+                    null
+                }
+            }
+        }
+
+        if (defaultMasks.size != numDefaults) {
+            println("$TAG Warning: Expected $numDefaults default masks but got ${defaultMasks.size}")
+        }
+
+        return DefaultParameterInfo(
+            hasDefaults = true,
+            numContextParams = numContextParams,
+            numRealValueParams = numRealValueParams,
+            defaultMasks = defaultMasks,
+            defaultArgIndex = defaultArgIndex
+        )
+    }
+
+    private fun isParameterUsingDefault(paramIndex: Int, defaultInfo: DefaultParameterInfo): Boolean {
+        if (!defaultInfo.hasDefaults || defaultInfo.defaultMasks.isEmpty()) return false
+        
+        val bitIndex = defaultsBitIndex(paramIndex)
+        val maskIndex = defaultsParamIndex(paramIndex)
+        
+        if (maskIndex >= defaultInfo.defaultMasks.size) {
+            println("$TAG Warning: Mask index $maskIndex out of bounds for masks size ${defaultInfo.defaultMasks.size}")
+            return false
+        }
+        
+        val maskValue = defaultInfo.defaultMasks[maskIndex]
+        return maskValue and (0b1 shl bitIndex) != 0
+    }
+
+    private fun updateDefaultParameterMask(call: IrCall, paramIndex: Int, defaultInfo: DefaultParameterInfo) {
+        if (!defaultInfo.hasDefaults || defaultInfo.defaultMasks.isEmpty()) return
+        
+        val bitIndex = defaultsBitIndex(paramIndex)
+        val maskIndex = defaultsParamIndex(paramIndex)
+        
+        if (maskIndex >= defaultInfo.defaultMasks.size) {
+            println("$TAG Warning: Cannot update mask at index $maskIndex (out of bounds)")
+            return
+        }
+        
+        val oldMask = defaultInfo.defaultMasks[maskIndex]
+        val newMask = oldMask and (0b1 shl bitIndex).inv() // Clear the bit
+        
+        val maskArgIndex = defaultInfo.defaultArgIndex + maskIndex
+        call.putValueArgument(
+            maskArgIndex,
+            pluginContext.irBuiltIns.createIrBuilder(call.symbol).irInt(newMask)
+        )
+    }
+
+    private fun createSemanticsModifier(
+        call: IrCall,
+        testTag: String,
+        parentModifier: IrExpression?,
+        isUsingDefault: Boolean
+    ): IrExpression {
+        val baseModifier = if (isUsingDefault || parentModifier == null) {
+            createEmptyModifier(call)
+        } else {
+            parentModifier
+        }
+
+        return pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
+            irCall(getSemanticsFunction()).apply {
+                extensionReceiver = baseModifier
+                putValueArgument(0, irBoolean(false)) // mergeDescendants = false
+                putValueArgument(1, createSemanticsLambda(testTag))
+            }
+        }
+    }
+
+    private fun createEmptyModifier(call: IrCall): IrExpression {
+        return pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
+            irGetObjectValue(
+                type = getModifierCompanionObj().defaultType,
+                classSymbol = getModifierCompanionObj()
+            )
+        }
     }
 
     private fun findModifierParameter(call: IrCall): Int {
@@ -234,40 +364,6 @@ class SemanticsIrTransformer(
         println("$TAG Final generated tag for '$calledComposableName': '$baseTag' count: $currentCount -> '$baseTag'_'$currentCount'")
         println("$TAG --- End generateStableTag for '$calledComposableName' ---")
         return "${baseTag}_${currentCount}"
-    }
-
-    private fun createSemanticsModifier(
-        call: IrCall,
-        testTag: String,
-        parentModifier: IrExpression? // parent modifier for chaining.
-    ): IrExpression {
-        val parentModifierDump: String? = parentModifier?.dump()
-        println("$TAG createSemanticsModifier :: parentModifierDump $parentModifierDump")
-        val baseModifier: IrExpression = if (
-            parentModifier == null ||
-            parentModifierDump?.contains("DEFAULT_VALUE") == true ||
-            parentModifierDump?.contains("value=null") == true
-        ) {
-            pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
-                irGetObjectValue(
-                    type = getModifierCompanionObj().defaultType,
-                    classSymbol = getModifierCompanionObj()
-                )
-            }
-        } else parentModifier
-
-        println("$TAG createSemanticsModifier :: baseModifierDump ${baseModifier.dump()}")
-
-        return pluginContext.irBuiltIns.createIrBuilder(call.symbol).run {
-            // Create: Modifier.semantics { testTagsAsResourceId = true; testTag = "..." }
-            irCall(getSemanticsFunction()).apply {
-                // Use Modifier.Companion as receiver
-                extensionReceiver = baseModifier
-                // Lambda parameter
-                putValueArgument(0, irBoolean(false)) // mergeDescendants = false
-                putValueArgument(1, createSemanticsLambda(testTag))
-            }
-        }
     }
 
     @OptIn(UnsafeDuringIrConstructionAPI::class)
@@ -420,4 +516,10 @@ class SemanticsIrTransformer(
         return pluginContext.referenceProperties(callableId).firstOrNull()
             ?: error("Could not find testTag property")
     }
+
+    // Helper functions for bit manipulation
+    private fun defaultsBitIndex(paramIndex: Int): Int = paramIndex % 32
+    private fun defaultsParamIndex(paramIndex: Int): Int = paramIndex / 32
+    private fun defaultParamCount(numParams: Int): Int = (numParams + 31) / 32
+    private fun changedParamCount(numParams: Int, thisParamCount: Int): Int = (numParams + thisParamCount + 31) / 32
 }
