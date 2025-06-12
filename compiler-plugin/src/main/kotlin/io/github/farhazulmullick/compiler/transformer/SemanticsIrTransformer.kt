@@ -11,18 +11,13 @@ import org.jetbrains.kotlin.ir.backend.js.utils.nameWithoutExtension
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.builders.declarations.addValueParameter
 import org.jetbrains.kotlin.ir.builders.declarations.buildFun
-import org.jetbrains.kotlin.ir.declarations.IrClass
-import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
-import org.jetbrains.kotlin.ir.declarations.IrFunction
-import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
-import org.jetbrains.kotlin.ir.declarations.IrValueParameter
+import org.jetbrains.kotlin.ir.declarations.*
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrConst
 import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
 import org.jetbrains.kotlin.ir.expressions.impl.IrFunctionExpressionImpl
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
-import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.IrPropertySymbol
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.UnsafeDuringIrConstructionAPI
@@ -34,12 +29,8 @@ import org.jetbrains.kotlin.ir.util.allParametersCount
 import org.jetbrains.kotlin.ir.util.dump
 import org.jetbrains.kotlin.ir.util.hasAnnotation
 import org.jetbrains.kotlin.ir.util.kotlinFqName
-import org.jetbrains.kotlin.ir.util.patchDeclarationParents
-import org.jetbrains.kotlin.name.CallableId
-import org.jetbrains.kotlin.name.ClassId
-import org.jetbrains.kotlin.name.FqName
-import org.jetbrains.kotlin.name.Name
-import java.util.LinkedList
+import org.jetbrains.kotlin.name.*
+import java.util.*
 
 class SemanticsIrTransformer(
     private val pluginContext: IrPluginContext,
@@ -379,21 +370,17 @@ class SemanticsIrTransformer(
 
         // Create lambda function with proper parent setup
         val lambdaFun = irFactory.buildFun {
-            name = Name.special("<anonymous>")
+            name = SpecialNames.ANONYMOUS
             returnType = unitType
             visibility = DescriptorVisibilities.LOCAL
             origin = IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA
         }.apply {
-            // Set parent to current context with proper origin
-            parent = currentClass?.irElement as? IrClass ?: currentFunction?.irElement as IrFunction
-
             // Add receiver parameter with correct name and origin
-            val receiverParam = addValueParameter {
-                name = Name.identifier("receiver")
+            val receiverParam: IrValueParameter = addValueParameter {
+                name = SpecialNames.RECEIVER
                 type = semanticsPropertyReceiverClass.defaultType
                 origin = IrDeclarationOrigin.DEFINED
             }
-            receiverParam.parent = this
 
             // Lambda body with proper origin
             body = pluginContext.irBuiltIns.createIrBuilder(symbol).irBlockBody {
@@ -408,8 +395,6 @@ class SemanticsIrTransformer(
                     putValueArgument(0, irString(testTag))
                 }
             }
-
-            patchDeclarationParents()
         }
 
         // Create the function expression with proper origin
@@ -422,14 +407,7 @@ class SemanticsIrTransformer(
         )
 
         // Set proper parent for function expression
-        val parentDeclaration = when {
-            currentClass?.irElement is IrClass -> currentClass!!.irElement as IrClass
-            currentFunction?.irElement is IrFunction -> currentFunction!!.irElement as IrFunction
-            else -> null // Do not assign parent if not a class or function
-        }
-        if (parentDeclaration != null) {
-            lambdaFun.parent = parentDeclaration
-        }
+        super.currentDeclarationParent?.let { lambdaFun.parent = it }
         return functionExpression
     }
 
