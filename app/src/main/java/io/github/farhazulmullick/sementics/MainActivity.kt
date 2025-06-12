@@ -35,10 +35,7 @@ fun App() {
     Column(modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = "hello world 1")
-        MyText(text = "hello world 2", modifier = Modifier.semantics(){
-            testTag = "text2"
-            testTagsAsResourceId = true
-        })
+        MyText(text = "hello world 2", modifier = Modifier)
         PWCText(text = "hello world 3")
         Text(text = "hello world 4", modifier = Modifier.padding(16.dp))
 
