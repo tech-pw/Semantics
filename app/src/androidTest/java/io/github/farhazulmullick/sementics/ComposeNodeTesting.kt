@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import live.pw.compose.sementics.App
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -45,6 +46,11 @@ class ComposeNodeTesting {
     @Test
     fun test4() {
         composeTestRule.onNodeWithTag(testTag = "auto_login_MainActivity_Column_MyText_1").assertIsDisplayed()
+    }
+
+    @Test
+    fun test5() {
+        composeTestRule.onNodeWithTag(testTag = "auto_login_MainActivity_Column_PWCButton_1").assertIsDisplayed()
     }
 
 }

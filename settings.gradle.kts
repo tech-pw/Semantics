@@ -41,5 +41,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "Sementics"
 include(":app")
-include("compiler-plugin")
-include("gradle-plugin")
+include(":semantic-compiler-plugin")
+include(":semantic-gradle-plugin")
