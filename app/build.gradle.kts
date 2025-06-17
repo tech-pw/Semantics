@@ -2,21 +2,22 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("io.github.farhazulmullick.semantics-gradle-plugin") version "1.0.0"
+    id("live.pw.compose.semantic.auto-test-tag") version "1.0.0"
 }
 
 semanticsConfig {
     enabled = true
     testTagPrefix = "login"
     autoGenerate = true
+    packageName = "live.pw.compose.semantics"
 }
 
 android {
-    namespace = "io.github.farhazulmullick.sementics"
+    namespace = "live.pw.compose.semantics"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.github.farhazulmullick.sementics"
+        applicationId = "live.pw.compose.semantics"
         minSdk = 24
         targetSdk = 35
         versionCode = 1
@@ -55,6 +56,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.androidx.material)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
