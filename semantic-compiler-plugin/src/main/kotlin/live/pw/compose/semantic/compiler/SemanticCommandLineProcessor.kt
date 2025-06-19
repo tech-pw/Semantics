@@ -12,7 +12,7 @@ import org.jetbrains.kotlin.config.CompilerConfigurationKey
 @AutoService(CommandLineProcessor::class)
 class SemanticCommandLineProcessor : CommandLineProcessor {
     companion object {
-        private const val PLUGIN_ID = "live.pw.compose.semantic.auto-test-tag"
+        private const val PLUGIN_ID = "io.github.tech-pw.compose-test-tag"
 
         val ARG_ENABLED = CompilerConfigurationKey<Boolean>("semantics.enabled")
         val ARG_TEST_TAG_PREFIX = CompilerConfigurationKey<String>("semantics.testTagPrefix")

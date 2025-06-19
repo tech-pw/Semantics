@@ -1,13 +1,12 @@
 plugins {
     `java-library`
-    `java-gradle-plugin`
-    `maven-publish`
+    id("com.gradle.plugin-publish") version "1.2.1"
     kotlin("kapt")
     alias(libs.plugins.jetbrains.kotlin.jvm)
 }
 
-group = "io.github.farhazulmullick"
-version = "1.0.0"
+group = "io.github.tech-pw"
+version = "1.0.0-alpha01"
 val mArtifactId = "semantic-gradle-plugin"
 
 tasks.register("sourcesJar", Jar::class) {
@@ -27,7 +26,7 @@ publishing {
             pom {
                 name.set("Semantic Gradle Plugin")
                 description.set("A Gradle plugin for semantic")
-                url.set("https://github.com/farhazulmullick-pw/semantic-plugin")
+                url.set("https://github.com/tech-pw/Semantics")
 
                 licenses {
                     license {
@@ -64,10 +63,15 @@ dependencies {
 }
 
 gradlePlugin {
+    website.set("https://github.com/tech-pw/Semantics")
+    vcsUrl.set("https://github.com/tech-pw/Semantics")
     plugins {
         create("semanticPlugin") {
-            id = "live.pw.compose.semantic.auto-test-tag"
+            displayName = "Semantic Gradle Plugin"
+            description = "A gradle plugin for generating compose semantics test-tags for composables."
+            id = "io.github.tech-pw.compose-test-tag"
             implementationClass = "live.pw.compose.semantic.gradle.SemanticGradlePlugin"
+            tags.set(listOf("compose", "test-tags", "semantics", "kotlin"))
         }
     }
 }

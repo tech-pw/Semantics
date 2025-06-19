@@ -15,7 +15,7 @@ class SemanticGradlePlugin : KotlinCompilerPluginSupportPlugin {
     }
     override fun isApplicable(kotlinCompilation: KotlinCompilation<*>): Boolean = true
 
-    override fun getCompilerPluginId(): String = "live.pw.compose.semantic.auto-test-tag"
+    override fun getCompilerPluginId(): String = "io.github.tech-pw.compose-test-tag"
 
     override fun getPluginArtifact(): SubpluginArtifact = SubpluginArtifact(
         groupId = "com.github.tech-pw",
