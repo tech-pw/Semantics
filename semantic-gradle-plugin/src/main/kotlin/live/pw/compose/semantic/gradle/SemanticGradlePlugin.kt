@@ -18,9 +18,9 @@ class SemanticGradlePlugin : KotlinCompilerPluginSupportPlugin {
     override fun getCompilerPluginId(): String = "live.pw.compose.semantic.auto-test-tag"
 
     override fun getPluginArtifact(): SubpluginArtifact = SubpluginArtifact(
-        groupId = "live.pw.compose.semantic",
+        groupId = "com.github.tech-pw",
         artifactId = "semantic-compiler-plugin",  // Changed to compiler plugin
-        version = "1.0.0"
+        version = "1.0.0-alpha01"
     )
 
     override fun applyToCompilation(kotlinCompilation: KotlinCompilation<*>): Provider<List<SubpluginOption>> {
