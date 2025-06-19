@@ -4,8 +4,8 @@ plugins {
     alias(libs.plugins.jetbrains.kotlin.jvm)
 }
 
-group = "live.pw.compose.semantic"
-version = "1.0.0"
+group = "com.github.tech-pw"
+version = "1.0.0-alpha01"
 val mArtifactId = "semantic-compiler-plugin"
 
 dependencies {
@@ -26,12 +26,16 @@ publishing {
 
             pom {
                 name.set("Semantic Compiler Plugin")
-                description.set("A Kotlin compiler plugin for semantics")
+                description.set("A Kotlin compiler plugin for adding compose semantics test-tags to composables.")
             }
         }
     }
     repositories {
+        // local
         mavenLocal()
+
+        // remote
+        maven("https://jitpack.io")
     }
 }
 

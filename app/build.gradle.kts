@@ -46,8 +46,6 @@ android {
 
 
 dependencies {
-    implementation("live.pw:pw-ui:3.0.12")
-    implementation("com.github.lincollincol:amplituda:2.2.2")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

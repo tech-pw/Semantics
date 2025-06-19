@@ -19,23 +19,6 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven { url = uri("https://jitpack.io") }
-        maven {
-                   url = uri("https://nexus3.penpencil.co/repository/maven-hosted-snapshots/")
-                   content {
-                       // Only checks for following groups in this repo
-                       includeGroup("live.pw")
-                       includeGroup("live.pw.kmp")
-                       includeGroup("live.pw.kmm.common")
-                       includeGroup("live.pw.kmp.common")
-                       includeGroup("live.pw.sd-ui-client")
-                       includeGroup("live.pw.vendors")
-                       includeGroup("com.amazonaws.waf")
-                       includeGroup("androidx.tonyodev.fetch2")
-                       includeGroup("androidx.tonyodev.fetch2core")
-                       includeGroup("androidx.tonyodev.fetch2okhttp")
-                       includeGroup("com.osbcp")
-                   }
-               }
     }
 }
 
