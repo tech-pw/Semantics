@@ -26,12 +26,9 @@ publishing {
 
             pom {
                 name.set("Semantic Compiler Plugin")
-                description.set("A Kotlin compiler plugin for semantics")
+                description.set("A Kotlin compiler plugin for adding compose semantics test-tags to composables.")
             }
         }
-    }
-    repositories {
-        mavenLocal()
     }
 }
 
