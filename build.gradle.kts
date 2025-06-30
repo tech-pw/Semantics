@@ -5,3 +5,13 @@ plugins {
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.jetbrains.kotlin.jvm) apply false
 }
+
+buildscript {
+    repositories {
+        maven { url = uri("https://jitpack.io") }
+    }
+    dependencies {
+        classpath("com.github.tech-pw:semantic-gradle-plugin:1.0.0-alpha02")
+        classpath("com.github.tech-pw:semantic-compiler-plugin:1.0.0-alpha02")
+    }
+}

@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "io.github.tech-pw"
-version = "1.0.0-alpha01"
+version = "1.0.0-alpha02"
 val mArtifactId = "semantic-gradle-plugin"
 
 tasks.register("sourcesJar", Jar::class) {
@@ -69,7 +69,7 @@ gradlePlugin {
         create("semanticPlugin") {
             displayName = "Semantic Gradle Plugin"
             description = "A gradle plugin for generating compose semantics test-tags for composables."
-            id = "io.github.tech-pw.compose-test-tag"
+            id = "io.github.tech-pw.auto-test-tag"
             implementationClass = "live.pw.compose.semantic.gradle.SemanticGradlePlugin"
             tags.set(listOf("compose", "test-tags", "semantics", "kotlin"))
         }
