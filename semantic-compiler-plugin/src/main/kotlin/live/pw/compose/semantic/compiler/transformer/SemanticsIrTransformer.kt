@@ -201,7 +201,7 @@ class SemanticsIrTransformer(
         val defaultArgs = (defaultArgIndex until ownerFn.valueParameters.size).map { call.getValueArgument(it) }
         val defaultMasks = defaultArgs.mapNotNull { arg ->
             when (arg) {
-                is IrConst<*> -> {
+                is IrConst -> {
                     when (val value = arg.value) {
                         is Int -> value
                         is Long -> value.toInt()
