@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "io.github.tech-pw"
-version = "1.0.0-alpha02"
+version = "1.0.0-alpha03"
 val mArtifactId = "semantic-gradle-plugin"
 
 tasks.register("sourcesJar", Jar::class) {
@@ -20,9 +20,7 @@ publishing {
         create<MavenPublication>("semanticPlugin") {
             from(components["java"])
 
-            artifact(tasks["sourcesJar"])
             artifactId = mArtifactId
-
             pom {
                 name.set("Semantic Gradle Plugin")
                 description.set("A Gradle plugin for semantic")

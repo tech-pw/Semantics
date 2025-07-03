@@ -20,7 +20,7 @@ class SemanticGradlePlugin : KotlinCompilerPluginSupportPlugin {
     override fun getPluginArtifact(): SubpluginArtifact = SubpluginArtifact(
         groupId = "com.github.tech-pw",
         artifactId = "semantic-compiler-plugin",  // Changed to compiler plugin
-        version = "1.0.0-alpha02"
+        version = "1.0.0-alpha03"
     )
 
     override fun applyToCompilation(kotlinCompilation: KotlinCompilation<*>): Provider<List<SubpluginOption>> {

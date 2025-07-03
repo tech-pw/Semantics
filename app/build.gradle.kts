@@ -2,7 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("live.pw.compose.semantic.auto-test-tag") version "1.0.0"
+    id("io.github.tech-pw.auto-test-tag") version "1.0.0"
 }
 
 semanticsConfig {

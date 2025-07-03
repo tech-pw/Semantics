@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.github.tech-pw"
-version = "1.0.0-alpha01"
+version = "1.0.0-alpha03"
 val mArtifactId = "semantic-compiler-plugin"
 
 dependencies {
