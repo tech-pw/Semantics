@@ -46,11 +46,8 @@ publishing {
     repositories {
         mavenLocal() // Publishes to the local Maven repository (~/.m2/repository)
 
-        // Optionally add a custom local directory repository
-        maven {
-            name = "projectLocalRepo"
-            url = uri(layout.buildDirectory.dir("repo"))
-        }
+        // remote
+        maven("https://jitpack.io")
     }
 }
 
