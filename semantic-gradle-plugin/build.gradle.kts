@@ -15,6 +15,11 @@ tasks.register("sourcesJar", Jar::class) {
     dependsOn(tasks.classes)
 }
 
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
 publishing {
     publications {
         create<MavenPublication>("semanticPlugin") {

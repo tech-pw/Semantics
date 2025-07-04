@@ -16,6 +16,11 @@ dependencies {
     testImplementation(kotlin("test"))
 }
 
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
 // Add publishing configuration
 publishing {
     publications {
