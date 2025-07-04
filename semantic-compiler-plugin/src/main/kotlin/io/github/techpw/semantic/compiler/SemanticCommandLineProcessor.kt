@@ -1,4 +1,4 @@
-package live.pw.compose.semantic.compiler
+package io.github.techpw.semantic.compiler
 
 import com.google.auto.service.AutoService
 import org.jetbrains.kotlin.compiler.plugin.AbstractCliOption
@@ -12,11 +12,10 @@ import org.jetbrains.kotlin.config.CompilerConfigurationKey
 @AutoService(CommandLineProcessor::class)
 class SemanticCommandLineProcessor : CommandLineProcessor {
     companion object {
-        private const val PLUGIN_ID = "live.pw.compose.semantic.auto-test-tag"
+        private const val PLUGIN_ID = "io.github.tech-pw.auto-test-tag"
 
         val ARG_ENABLED = CompilerConfigurationKey<Boolean>("semantics.enabled")
         val ARG_TEST_TAG_PREFIX = CompilerConfigurationKey<String>("semantics.testTagPrefix")
-        val ARG_AUTO_GENERATE = CompilerConfigurationKey<Boolean>("semantics.autoGenerate")
         val ARG_PACKAGE_NAME = CompilerConfigurationKey<String>("semantics.packageName")
     }
 
@@ -34,11 +33,6 @@ class SemanticCommandLineProcessor : CommandLineProcessor {
             description = "Prefix for generated test tags"
         ),
         CliOption(
-            optionName = "autoGenerate",
-            valueDescription = "true|false",
-            description = "Auto-generate test tags based on function names"
-        ),
-        CliOption(
             optionName = "packageName",
             valueDescription = "string",
             description = "Package name for generated test tags"
@@ -53,7 +47,6 @@ class SemanticCommandLineProcessor : CommandLineProcessor {
         when (option.optionName) {
             "enabled" -> configuration.put(ARG_ENABLED, value.toBoolean())
             "testTagPrefix" -> configuration.put(ARG_TEST_TAG_PREFIX, value)
-            "autoGenerate" -> configuration.put(ARG_AUTO_GENERATE, value.toBoolean())
             "packageName" -> configuration.put(ARG_PACKAGE_NAME, value)
             else -> throw IllegalArgumentException("Unknown option: ${option.optionName}")
         }

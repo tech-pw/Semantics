@@ -2,14 +2,13 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("live.pw.compose.semantic.auto-test-tag") version "1.0.0"
+    id("io.github.tech-pw.auto-test-tag") version "1.0.0"
 }
 
 semanticsConfig {
     enabled = true
     testTagPrefix = "login"
-    autoGenerate = true
-    packageName = "live.pw.compose.semantics"
+    packageName = "io.github.techpw.semantics"
 }
 
 android {
@@ -46,8 +45,6 @@ android {
 
 
 dependencies {
-    implementation("live.pw:pw-ui:3.0.12")
-    implementation("com.github.lincollincol:amplituda:2.2.2")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)

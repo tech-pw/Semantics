@@ -1,6 +1,6 @@
-package live.pw.compose.semantic.compiler.transformer
+package io.github.techpw.semantic.compiler.transformer
 
-import live.pw.compose.semantic.compiler.KtxNameConventions
+import io.github.techpw.semantic.compiler.KtxNameConventions
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
 import org.jetbrains.kotlin.backend.common.extensions.IrPluginContext
 import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
@@ -35,7 +35,6 @@ import org.jetbrains.kotlin.ir.types.IrSimpleType
 import org.jetbrains.kotlin.ir.types.classFqName
 import org.jetbrains.kotlin.ir.types.defaultType
 import org.jetbrains.kotlin.ir.types.typeWith
-import org.jetbrains.kotlin.ir.util.allParametersCount
 import org.jetbrains.kotlin.ir.util.dump
 import org.jetbrains.kotlin.ir.util.hasAnnotation
 import org.jetbrains.kotlin.ir.util.kotlinFqName
@@ -50,7 +49,6 @@ import kotlin.math.ceil
 class SemanticsIrTransformer(
     private val pluginContext: IrPluginContext,
     private val testTagPrefix: String,
-    private val autoGenerate: Boolean,
     private val packageName: String
 ) : IrElementTransformerVoidWithContext() {
 
@@ -201,7 +199,7 @@ class SemanticsIrTransformer(
         val defaultArgs = (defaultArgIndex until ownerFn.valueParameters.size).map { call.getValueArgument(it) }
         val defaultMasks = defaultArgs.mapNotNull { arg ->
             when (arg) {
-                is IrConst<*> -> {
+                is IrConst -> {
                     when (val value = arg.value) {
                         is Int -> value
                         is Long -> value.toInt()

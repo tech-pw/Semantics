@@ -1,4 +1,4 @@
-package live.pw.compose.sementics
+package io.github.techpw.sementics
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Row

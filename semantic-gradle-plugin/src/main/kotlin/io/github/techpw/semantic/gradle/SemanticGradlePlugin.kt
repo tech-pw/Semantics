@@ -1,4 +1,4 @@
-package live.pw.compose.semantic.gradle
+package io.github.techpw.semantic.gradle
 
 import com.google.auto.service.AutoService
 import org.gradle.api.Project
@@ -15,10 +15,10 @@ class SemanticGradlePlugin : KotlinCompilerPluginSupportPlugin {
     }
     override fun isApplicable(kotlinCompilation: KotlinCompilation<*>): Boolean = true
 
-    override fun getCompilerPluginId(): String = "live.pw.compose.semantic.auto-test-tag"
+    override fun getCompilerPluginId(): String = "io.github.tech-pw.auto-test-tag"
 
     override fun getPluginArtifact(): SubpluginArtifact = SubpluginArtifact(
-        groupId = "live.pw.compose.semantic",
+        groupId = "io.github.tech-pw",
         artifactId = "semantic-compiler-plugin",  // Changed to compiler plugin
         version = "1.0.0"
     )
@@ -32,7 +32,6 @@ class SemanticGradlePlugin : KotlinCompilerPluginSupportPlugin {
             listOf(
                 SubpluginOption(key = "enabled", value = extension.enabled.toString()),
                 SubpluginOption(key = "testTagPrefix", value = extension.testTagPrefix),
-                SubpluginOption(key = "autoGenerate", value = extension.autoGenerate.toString()),
                 SubpluginOption(key = "packageName", value = extension.packageName.toString())
             )
         }
@@ -42,6 +41,5 @@ class SemanticGradlePlugin : KotlinCompilerPluginSupportPlugin {
 open class SemanticsExtension {
     var enabled: Boolean = true
     var testTagPrefix: String = ""
-    var autoGenerate: Boolean = true
     var packageName: String = ""
 }

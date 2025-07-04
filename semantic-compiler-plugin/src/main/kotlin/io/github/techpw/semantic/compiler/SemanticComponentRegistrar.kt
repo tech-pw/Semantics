@@ -1,4 +1,4 @@
-package live.pw.compose.semantic.compiler
+package io.github.techpw.semantic.compiler
 
 import com.google.auto.service.AutoService
 import org.jetbrains.kotlin.backend.common.extensions.IrGenerationExtension
@@ -14,11 +14,10 @@ class SemanticComponentRegistrar : CompilerPluginRegistrar() {
         if (!enabled) return
 
         val testTagPrefix = configuration.get(SemanticCommandLineProcessor.ARG_TEST_TAG_PREFIX, "")
-        val autoGenerate = configuration.get(SemanticCommandLineProcessor.ARG_AUTO_GENERATE, true)
         val packageName = configuration.get(SemanticCommandLineProcessor.ARG_PACKAGE_NAME, "")
 
         IrGenerationExtension.Companion.registerExtension(
-            SemanticIrGenerationExtension(testTagPrefix, autoGenerate, packageName)
+            SemanticIrGenerationExtension(testTagPrefix, packageName)
         )
     }
 
