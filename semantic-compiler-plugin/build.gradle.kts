@@ -1,10 +1,11 @@
+import java.net.URI
 plugins {
     `maven-publish`
     kotlin("kapt")
     alias(libs.plugins.jetbrains.kotlin.jvm)
 }
 
-group = "live.pw.compose.semantic"
+group = "io.github.tech-pw"
 version = "1.0.0"
 val mArtifactId = "semantic-compiler-plugin"
 
@@ -26,12 +27,21 @@ publishing {
 
             pom {
                 name.set("Semantic Compiler Plugin")
-                description.set("A Kotlin compiler plugin for semantics")
+                description.set("A Kotlin compiler plugin for adding compose semantics test-tags to composables.")
             }
         }
     }
     repositories {
+        // local
         mavenLocal()
+        // pw nexus
+        maven {
+            url = URI.create("https://nexus3.penpencil.co/repository/maven-hosted-snapshots/")
+            credentials {
+                username = "nx-publish"
+                password = "Nexus@12345"
+            }
+        }
     }
 }
 

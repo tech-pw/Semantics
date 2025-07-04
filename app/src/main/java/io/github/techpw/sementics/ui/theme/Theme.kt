@@ -1,4 +1,4 @@
-package live.pw.compose.sementics.ui.theme
+package io.github.techpw.sementics.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme

@@ -1,4 +1,4 @@
-package live.pw.compose.semantic.compiler
+package io.github.techpw.semantic.compiler
 import org.jetbrains.kotlin.name.Name
 
 object KtxNameConventions {

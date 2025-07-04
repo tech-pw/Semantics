@@ -1,12 +1,13 @@
+import java.net.URI
+
 plugins {
     `java-library`
-    `java-gradle-plugin`
-    `maven-publish`
+    id("com.gradle.plugin-publish") version "1.2.1"
     kotlin("kapt")
     alias(libs.plugins.jetbrains.kotlin.jvm)
 }
 
-group = "io.github.farhazulmullick"
+group = "io.github.tech-pw"
 version = "1.0.0"
 val mArtifactId = "semantic-gradle-plugin"
 
@@ -21,13 +22,11 @@ publishing {
         create<MavenPublication>("semanticPlugin") {
             from(components["java"])
 
-            artifact(tasks["sourcesJar"])
             artifactId = mArtifactId
-
             pom {
                 name.set("Semantic Gradle Plugin")
                 description.set("A Gradle plugin for semantic")
-                url.set("https://github.com/farhazulmullick-pw/semantic-plugin")
+                url.set("https://gitlab.com/penpencil-services/mobile-apps/kmm/libs/compiler-plugin.git")
 
                 licenses {
                     license {
@@ -51,8 +50,11 @@ publishing {
 
         // Optionally add a custom local directory repository
         maven {
-            name = "projectLocalRepo"
-            url = uri(layout.buildDirectory.dir("repo"))
+            url = URI.create("https://nexus3.penpencil.co/repository/maven-hosted-snapshots/")
+            credentials {
+                username = "nx-publish"
+                password = "Nexus@12345"
+            }
         }
     }
 }
@@ -64,10 +66,15 @@ dependencies {
 }
 
 gradlePlugin {
+    website.set("https://github.com/tech-pw/Semantics")
+    vcsUrl.set("https://github.com/tech-pw/Semantics")
     plugins {
         create("semanticPlugin") {
-            id = "live.pw.compose.semantic.auto-test-tag"
-            implementationClass = "live.pw.compose.semantic.gradle.SemanticGradlePlugin"
+            displayName = "Semantic Gradle Plugin"
+            description = "A gradle plugin for generating compose semantics test-tags for composables."
+            id = "io.github.tech-pw.auto-test-tag"
+            implementationClass = "io.github.techpw.semantic.gradle.SemanticGradlePlugin"
+            tags.set(listOf("compose", "test-tags", "semantics", "kotlin"))
         }
     }
 }

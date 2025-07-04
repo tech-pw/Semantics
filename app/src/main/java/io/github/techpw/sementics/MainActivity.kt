@@ -1,4 +1,4 @@
-package live.pw.compose.sementics
+package io.github.techpw.sementics
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -13,8 +13,6 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.penpencil.pw.ui.common.PWCText
-import com.penpencil.pw.ui.pwui.pwButtons.PWCButton
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalComposeUiApi::class)
@@ -33,15 +31,7 @@ fun App() {
         horizontalAlignment = Alignment.CenterHorizontally) {
         Text(text = "hello world 1")
         MyText(text = "hello world 2")
-        PWCText(text = "hello world 3")
         Text(text = "hello world 4", modifier = Modifier.padding(16.dp))
-
-        PWCButton(
-            text = "Button A",
-            onClick = {
-                println("button clicked")
-            }
-        )
 
         Button(modifier = Modifier , onClick = {
             println("button clicked")

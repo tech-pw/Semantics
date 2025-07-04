@@ -13,7 +13,7 @@
             android:theme="@style/Theme.Sementics"
             tools:targetApi="31">
         <activity
-                android:name="live.pw.compose.sementics.MainActivity"
+                android:name="io.github.techpw.sementics.MainActivity"
                 android:exported="true"
                 android:label="@string/app_name"
                 android:theme="@style/Theme.Sementics">
