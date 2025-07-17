@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "io.github.tech-pw"
-version = "1.0.0"
+version = "1.0.1"
 val mArtifactId = "semantic-gradle-plugin"
 
 tasks.register("sourcesJar", Jar::class) {

@@ -49,7 +49,8 @@ import kotlin.math.ceil
 class SemanticsIrTransformer(
     private val pluginContext: IrPluginContext,
     private val testTagPrefix: String,
-    private val packageName: String
+    private val packageName: String,
+    private val whiteListedUiComponents: Set<String>
 ) : IrElementTransformerVoidWithContext() {
 
     companion object {
@@ -106,7 +107,7 @@ class SemanticsIrTransformer(
         if (hasExistingSemantics(call)) return false
 
         // Check if it's a UI component that should have semantics
-        return isUiComponent(function)
+        return isWhiteListedUiComponents(function, whiteListedUiComponents)
     }
 
     private fun hasExistingSemantics(call: IrCall): Boolean {
@@ -139,14 +140,9 @@ class SemanticsIrTransformer(
         return false
     }
 
-    private fun isUiComponent(function: IrFunction): Boolean {
+    private fun isWhiteListedUiComponents(function: IrFunction, components: Set<String>): Boolean {
         val functionName = function.name.asString()
-        val commonUiComponents = setOf(
-            "Button", "Text", "TextField", "Image", "Icon", "Card",
-            "Surface", "Box", "Row", "Column", "LazyColumn", "LazyRow",
-            "BasicText", "PWCButton", "PWCText", "PWCImage", "PWCIcon"
-        )
-        return true
+        return components.isEmpty() || components.contains(functionName)
     }
 
     private fun addSemanticsModifier(call: IrCall): IrExpression {
@@ -158,17 +154,17 @@ class SemanticsIrTransformer(
         val isUsingDefault = isParameterUsingDefault(modifierParamIndex, defaultInfo)
 
         println("$TAG function :: ${ownerFn.name.asString()} has default $isUsingDefault")
-        
+
         val parentModifier = call.getValueArgument(modifierParamIndex)
         val testTag = call.generateStableTag()
         val semanticsModifier = createSemanticsModifier(call, testTag, parentModifier, isUsingDefault)
-        
+
         val newCall = call.copyWithNewModifier(modifierParamIndex, semanticsModifier)
-        
+
         if (isUsingDefault) {
             updateDefaultParameterMask(newCall, modifierParamIndex, defaultInfo)
         }
-        
+
         return newCall
     }
 
@@ -231,7 +227,7 @@ class SemanticsIrTransformer(
 
     private fun isParameterUsingDefault(paramIndex: Int, defaultInfo: DefaultParameterInfo): Boolean {
         if (!defaultInfo.hasDefaults || defaultInfo.defaultMasks.isEmpty()) return false
-        
+
         val bitIndex: Int = defaultsBitIndex(paramIndex)
         val maskIndex: Int = defaultsParamIndex(paramIndex)
 
@@ -239,7 +235,7 @@ class SemanticsIrTransformer(
             println("$TAG Warning: Mask index $maskIndex out of bounds for masks size ${defaultInfo.defaultMasks.size}")
             return false
         }
-        
+
         val maskValue = defaultInfo.defaultMasks[maskIndex]
         println("$TAG maskValue for paramIndex $paramIndex (maskIndex $maskIndex, bitIndex $bitIndex): $maskValue")
         return maskValue and (0b1 shl bitIndex) != 0
@@ -247,18 +243,18 @@ class SemanticsIrTransformer(
 
     private fun updateDefaultParameterMask(call: IrCall, paramIndex: Int, defaultInfo: DefaultParameterInfo) {
         if (!defaultInfo.hasDefaults || defaultInfo.defaultMasks.isEmpty()) return
-        
+
         val bitIndex = defaultsBitIndex(paramIndex)
         val maskIndex = defaultsParamIndex(paramIndex)
-        
+
         if (maskIndex >= defaultInfo.defaultMasks.size) {
             println("$TAG Warning: Cannot update mask at index $maskIndex (out of bounds)")
             return
         }
-        
+
         val oldMask = defaultInfo.defaultMasks[maskIndex]
         val newMask = oldMask and (0b1 shl bitIndex).inv() // Clear the bit
-        
+
         val maskArgIndex = defaultInfo.defaultArgIndex + maskIndex
         call.putValueArgument(
             maskArgIndex,
@@ -340,10 +336,10 @@ class SemanticsIrTransformer(
             // Filter out compiler-generated anonymous call names or internal functions.
             // These are often internal Compose lambdas and should not be part of the stable tag path.
             val isCompilerGeneratedAnonymousCall = parentFunctionName.contains("<anonymous>") ||
-                                                   parentFunctionName.contains("<no name provided>") ||
-                                                   parentFunctionName.startsWith("invoke") ||
-                                                   parentOrigin == IrStatementOrigin.LAMBDA ||
-                                                   parentOrigin == IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA
+                    parentFunctionName.contains("<no name provided>") ||
+                    parentFunctionName.startsWith("invoke") ||
+                    parentOrigin == IrStatementOrigin.LAMBDA ||
+                    parentOrigin == IrDeclarationOrigin.LOCAL_FUNCTION_FOR_LAMBDA
 
             println("$TAG       Filtering decision: isCompilerGeneratedAnonymousCall=$isCompilerGeneratedAnonymousCall, parentIsComposable=$parentIsComposable")
 
