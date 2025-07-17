@@ -8,12 +8,13 @@ import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 
 class SemanticIrGenerationExtension(
     private val testTagPrefix: String,
-    private val packageName: String
+    private val packageName: String,
+    private val whiteListedUiComponents: Set<String>
 ) : IrGenerationExtension {
 
     override fun generate(moduleFragment: IrModuleFragment, pluginContext: IrPluginContext) {
         moduleFragment.transformChildrenVoid(
-            SemanticsIrTransformer(pluginContext, testTagPrefix, packageName)
+            SemanticsIrTransformer(pluginContext, testTagPrefix, packageName, whiteListedUiComponents)
         )
     }
 }

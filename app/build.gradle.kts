@@ -2,13 +2,14 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
-    id("io.github.tech-pw.auto-test-tag") version "1.0.0"
+    id("io.github.tech-pw.auto-test-tag") version "1.0.1"
 }
 
 semanticsConfig {
     enabled = true
     testTagPrefix = "login"
     packageName = "io.github.techpw.semantics"
+    whiteListedUiComponents = listOf("Text", "Button")
 }
 
 android {
