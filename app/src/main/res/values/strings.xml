@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Sementics</string>
+    <string name="testing_text">Hello world 5</string>
+    <string name="hello_world_6">Hello world 6</string>
 </resources>
