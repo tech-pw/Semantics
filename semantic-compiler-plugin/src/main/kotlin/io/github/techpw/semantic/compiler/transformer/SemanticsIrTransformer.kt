@@ -32,11 +32,13 @@ import org.jetbrains.kotlin.ir.symbols.IrPropertySymbol
 import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.ir.symbols.UnsafeDuringIrConstructionAPI
 import org.jetbrains.kotlin.ir.types.IrSimpleType
+import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.classFqName
 import org.jetbrains.kotlin.ir.types.defaultType
 import org.jetbrains.kotlin.ir.types.typeWith
 import org.jetbrains.kotlin.ir.util.dump
 import org.jetbrains.kotlin.ir.util.hasAnnotation
+import org.jetbrains.kotlin.ir.util.isFunction
 import org.jetbrains.kotlin.ir.util.kotlinFqName
 import org.jetbrains.kotlin.name.CallableId
 import org.jetbrains.kotlin.name.ClassId
@@ -87,9 +89,9 @@ class SemanticsIrTransformer(
 
         // Check if this is a Composable function call that might need semantics
         if (shouldAddSemantics(transformedCall)) {
-            println("$TAG Before adding Semantics:: ${expression.dump()}")
+            //println("$TAG Before adding Semantics:: ${expression.dump()}")
             val expression = addSemanticsModifier(transformedCall)
-            println("$TAG After adding Semantics:: ${expression.dump()}")
+            //println("$TAG After adding Semantics:: ${expression.dump()}")
             callQueue.removeLast() // Pop the call after processing
             return expression
         }
@@ -292,6 +294,50 @@ class SemanticsIrTransformer(
         }
     }
 
+    private fun findTextParameter(call: IrCall): Int {
+        val function: IrSimpleFunction = call.symbol.owner
+        for (i in 0 until function.valueParameters.size) {
+            val param = function.valueParameters[i]
+            if (param.type.classFqName == FqName("kotlin.String")
+                && param.name.equals("text")) {
+                println("$TAG findTextParameter, found at index ${i}")
+                return i
+            }
+        }
+        println("$TAG findTextParameter, Not found")
+        return -1
+    }
+
+    private fun IrCall.getMergedIrDumpOfParams(): StringBuilder {
+        val builder = StringBuilder()
+        val function: IrSimpleFunction = this.symbol.owner
+        function.valueParameters.forEachIndexed { index, param: IrValueParameter ->
+            // Skip if parameter is a composable lambda (has FunctionN type with @Composable annotation)
+
+            val arg = getValueArgument(index)
+            if (arg != null) {
+                val dump = arg.dump()
+                val isComposer = dump.contains("androidx.compose.runtime.Composer")
+                val isResource = dump.contains("androidx.compose.ui.res") ||
+                        dump.contains("org.jetbrains.compose.resources")
+                if (isComposer && !isResource) {
+                    println("$TAG --- Found composable param, skipping param at index $index")
+                    // Skip composable lambda parameters that are not resource-related
+                } else {
+                    println("$TAG --- Parameters at index $index is $dump")
+                    builder.append(dump)
+                }
+            }
+        }
+        println("$TAG --- Dump for '${function.name} is $builder' ---")
+        println("$TAG findTextParameter, Not found")
+        return builder
+    }
+
+    // Extension function to check if type is a composable lambda
+    fun IrType.isComposableLambda(): Boolean {
+        return this.isFunction() && hasAnnotation(composableAnnotation)
+    }
     private fun findModifierParameter(call: IrCall): Int {
         val function: IrSimpleFunction = call.symbol.owner
         for (i in 0 until function.valueParameters.size) {
@@ -305,7 +351,7 @@ class SemanticsIrTransformer(
         return -1
     }
 
-    private fun IrCall.generateStableTag(): String {
+    fun IrCall.getCallHierarchy(): List<String>  {
         val calledComposableName = symbol.owner.name.asString()
         val fileName = currentFile?.nameWithoutExtension ?: "UnknownFile"
 
@@ -351,34 +397,44 @@ class SemanticsIrTransformer(
             }
         }
         println("$TAG generateStableTag :: pathComponents (before final tag build): $pathComponents")
+        pathComponents.add(calledComposableName)
+        return pathComponents
+    }
+
+    @OptIn(UnsafeDuringIrConstructionAPI::class)
+    private fun IrCall.generateStableTag(): String {
+        val calledComposableName = symbol.owner.name.asString()
+        val fileName = currentFile.nameWithoutExtension
 
         val tagBuilder = StringBuilder()
-
         if (packageName.isNotEmpty()) {
-            tagBuilder.append(packageName).append(":id/")
+            tagBuilder
+                .append(packageName)
+                .append(":id/")
         }
         tagBuilder.append("auto")
-
         if (testTagPrefix.isNotEmpty()) {
-            tagBuilder.append("_").append(testTagPrefix)
+            tagBuilder
+                .append("_")
+                .append(testTagPrefix)
+        }
+        tagBuilder
+            .append("_")
+            .append(fileName)
+
+        for (component in getCallHierarchy()) {
+            tagBuilder
+                .append("_")
+                .append(component)
         }
 
-        tagBuilder.append("_").append(fileName)
+        val methodHashId: Int = getMergedIrDumpOfParams().toString().hashCode()
+        tagBuilder.append("_").append(methodHashId)
 
-        for (component in pathComponents) {
-            tagBuilder.append("_").append(component)
-        }
-
-        tagBuilder.append("_").append(calledComposableName)
-
-        val baseTag = tagBuilder.toString()
-
-        val currentCount = instanceCounts.getOrDefault(baseTag, 0) + 1
-        instanceCounts[baseTag] = currentCount
-
-        println("$TAG Final generated tag for '$calledComposableName': '$baseTag' count: $currentCount -> '$baseTag'_'$currentCount'")
+        println("$TAG --- Tag for '$calledComposableName is $tagBuilder' ---")
         println("$TAG --- End generateStableTag for '$calledComposableName' ---")
-        return "${baseTag}_${currentCount}"
+
+        return "$tagBuilder"
     }
 
     @OptIn(UnsafeDuringIrConstructionAPI::class)
