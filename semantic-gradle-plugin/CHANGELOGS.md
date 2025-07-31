@@ -1,5 +1,8 @@
 # ChangeLogs
 
+## 1.1.1
+- Combined IR symbols of all the params of composable fn for generating unique id.
+
 ## 1.1.0
 - Added support for whitelisting ui-components in the semantic compiler plugin.
   By default, all ui-components are whitelisted.

@@ -66,8 +66,6 @@ class SemanticCommandLineProcessor : CommandLineProcessor {
             OPTION_PACKAGE_NAME -> configuration.put(ARG_PACKAGE_NAME, value)
             OPTION_WHITELISTED_UI_COMPONENTS -> {
                 whiteListedComponents.add(value)
-                //val components = value.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                println("FARHAZ:: current_value :: $value, array $whiteListedComponents")
                 configuration.put(ARG_WHITELISTED_UI_COMPONENTS, whiteListedComponents)
             }
             else -> throw IllegalArgumentException("Unknown option: ${option.optionName}")
