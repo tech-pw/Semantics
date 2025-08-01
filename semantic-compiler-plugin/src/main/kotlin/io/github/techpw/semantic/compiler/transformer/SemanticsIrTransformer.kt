@@ -48,6 +48,44 @@ import org.jetbrains.kotlin.name.SpecialNames
 import java.util.LinkedList
 import kotlin.math.ceil
 
+/**
+ * An [IrElementTransformerVoidWithContext] that transforms the IR of Composable functions
+ * to automatically add semantics modifiers with test tags.
+ *
+ * This transformer aims to simplify UI testing by:
+ * 1. Identifying Composable function calls.
+ * 2. Checking if they should have semantics (based on a whitelist or if they are common UI components).
+ * 3. Ensuring they don't already have semantics defined.
+ * 4. If conditions are met, it injects a `Modifier.semantics` call, setting `testTagsAsResourceId = true`
+ *    and a generated `testTag`.
+ *
+ * The generated `testTag` is designed to be stable and unique, incorporating:
+ * - The application's package name.
+ * - A configurable prefix (`testTagPrefix`).
+ * - The filename where the Composable is located.
+ * - A hierarchical path of parent Composable function names.
+ * - A hash of the Composable's parameters to differentiate instances.
+ *
+ * This allows test automation frameworks to reliably locate UI elements.
+ *
+ * Key operations:
+ * - **`visitFunctionNew`**: Filters for functions annotated with `@Composable`.
+ * - **`visitCall`**: Processes calls to Composable functions.
+ *   - Uses a `callQueue` to track the hierarchy of Composable calls for tag generation.
+ *   - **`shouldAddSemantics`**: Determines if a Composable call needs semantics added.
+ *     - Checks for `@Composable` annotation.
+ *     - Checks if semantics are already present (`hasExistingSemantics`).
+ *     - Checks if the Composable is in the `whiteListedUiComponents` or if the whitelist is empty (meaning all Composables are considered).
+ *   - **`addSemanticsModifier`**: Constructs and injects the `Modifier.semantics` call.
+ *     - Handles cases where the Composable function uses default parameter values for its modifier.
+ *     - **`generateStableTag`**: Creates the unique test tag string.
+ *     - **`createSemanticsLambda`**: Builds the IR for the lambda function passed to `Modifier.semantics`.
+ *
+ * Handling of Default Parameters:
+ * The transformer correctly identifies if a Composable is using a default `Modifier` (e.g., `Modifier = Modifier`).
+ *
+ * @author Farhazul Mullick
+ */
 class SemanticsIrTransformer(
     private val pluginContext: IrPluginContext,
     private val testTagPrefix: String,
@@ -72,6 +110,18 @@ class SemanticsIrTransformer(
     private val instanceCounts = mutableMapOf<String, Int>()
     private val callQueue: LinkedList<IrCall> = LinkedList()
 
+    /**
+     * Visits a new function declaration.
+     *
+     * This method is overridden to process only Composable functions. If the function
+     * is not annotated with `@Composable`, it delegates to the superclass implementation.
+     * Otherwise, it transforms the children of the function declaration.
+     *
+     * @param declaration The [IrFunction] declaration to visit.
+     * @return The transformed [IrStatement], which is the original declaration after
+     *         its children have been transformed, or the result of the superclass
+     *         call if the function is not Composable.
+     */
     override fun visitFunctionNew(declaration: IrFunction): IrStatement {
         // Only process Composable functions
         if (!declaration.hasAnnotation(composableAnnotation)) {
@@ -83,6 +133,31 @@ class SemanticsIrTransformer(
         return declaration
     }
 
+    /**
+     * Visits an [IrCall] expression.
+     *
+     * This method is the core of the transformation. It performs the following steps:
+     * 1. Pushes the current call onto a `callQueue`. This queue is used to reconstruct
+     *    the call hierarchy for generating unique test tags.
+     * 2. Calls `super.visitCall(expression)` to allow other transformations to proceed.
+     * 3. Checks if the `transformedCall` (the result of `super.visitCall`) is a Composable
+     *    function call that `shouldAddSemantics`.
+     * 4. If semantics should be added:
+     *    a. Calls `addSemanticsModifier` to create and inject a new Modifier that includes
+     *       the semantics information (specifically, the `testTag`).
+     *    b. Pops the current call from the `callQueue` after processing.
+     *    c. Returns the new expression with the added semantics.
+     * 5. If no transformation was applied (either not a Composable or already has semantics):
+     *    a. Pops the current call from the `callQueue`.
+     *    b. Returns the `transformedCall` as is.
+     *
+     * The `callQueue` is crucial for understanding the nesting of Composable calls, which
+     * allows for the generation of hierarchical and stable test tags.
+     *
+     * @param expression The [IrCall] expression to visit.
+     * @return The transformed [IrExpression], which might be the original expression or a new
+     *         one with an added semantics modifier.
+     */
     override fun visitCall(expression: IrCall): IrExpression {
         callQueue.addLast(expression) // Push the current call onto the stack
         val transformedCall = super.visitCall(expression) as IrCall
@@ -142,6 +217,19 @@ class SemanticsIrTransformer(
         return false
     }
 
+    /**
+     * Checks if a given Composable function is white-listed for adding semantics.
+     * The function is considered white-listed if its name is present in the `components` set.
+     * If the `components` set is empty, all Composable functions are considered white-listed.
+     *
+     * @param function The [IrFunction] to check. This function is expected to be a Composable.
+     * @param components A set of strings representing the names of white-listed UI components.
+     *                   If this set is empty, the function will always return `true`.
+     * @return `true` if the function is white-listed or if the `components` set is empty,
+     *         `false` otherwise.
+     *
+     * @author Farhazul Mullick
+     */
     private fun isWhiteListedUiComponents(function: IrFunction, components: Set<String>): Boolean {
         val functionName = function.name.asString()
         return components.isEmpty() || components.contains(functionName)
@@ -183,6 +271,32 @@ class SemanticsIrTransformer(
                 (if (dispatchReceiverParameter != null) 1 else 0) +
                 (if (extensionReceiverParameter != null) 1 else 0)
 
+    /**
+     * Retrieves information about default parameters for a given function call.
+     *
+     * This function analyzes the `ownerFn` (the function being called) to determine
+     * if it utilizes default parameter values. If so, it extracts information such as:
+     * - The number of context parameters.
+     * - The number of "real" value parameters (excluding compiler-generated ones).
+     * - The default parameter masks (bitmasks indicating which parameters are using defaults).
+     * - The index where default argument information (masks and handler) starts in the function's value parameters.
+     *
+     * The default parameter mechanism in Kotlin IR involves:
+     * 1. **`$default` parameter:** A synthetic parameter indicating the presence of default values.
+     * 2. **Default masks:** Integer parameters (often named `$mask0`, `$mask1`, etc.) where each bit
+     *    corresponds to a parameter. A '1' indicates the parameter uses its default value.
+     * 3. **Default handler:** A synthetic parameter (often named `$handler`) which is a function
+     *    responsible for providing the default values.
+     *
+     * This function parses these elements from the `call` and `ownerFn` to construct
+     * a [DefaultParameterInfo] object.
+     *
+     * @param call The [IrCall] expression representing the function invocation.
+     * @param ownerFn The [IrFunction] declaration of the function being called.
+     * @return A [DefaultParameterInfo] object containing details about the default parameters.
+     *         If the function has no default parameters, a [DefaultParameterInfo] with `hasDefaults = false`
+     *         and other fields set to zero/empty is returned.
+     */
     private fun getDefaultParameterInfo(call: IrCall, ownerFn: IrFunction): DefaultParameterInfo {
         val hasDefaults = ownerFn.valueParameters.any { it.name == KtxNameConventions.DEFAULT_PARAMETER }
         println("$TAG Checking defaults for function '${ownerFn.name.asString()}': hasDefaults=$hasDefaults")
@@ -227,6 +341,32 @@ class SemanticsIrTransformer(
         )
     }
 
+    /**
+     * Checks if a parameter at a given index is using its default value.
+     * This is determined by looking at the default parameter masks provided by the Kotlin compiler.
+     *
+     * Default parameters in Kotlin are handled using an integer mask. Each bit in the mask
+     * corresponds to a parameter. If the bit is set, it means the default value for that
+     * parameter is used.
+     *
+     * For example, if a function has parameters (a, b, c, d, e) and parameters `b` and `d`
+     * are using their default values, the mask might look like `0...01010` (binary).
+     *
+     * This function:
+     * 1. Calculates which mask integer in the `defaultMasks` list contains the bit for `paramIndex`.
+     *    This is `maskIndex`.
+     * 2. Calculates the specific bit position within that mask integer for `paramIndex`.
+     *    This is `bitIndex`.
+     * 3. Retrieves the mask value from `defaultInfo.defaultMasks` at `maskIndex`.
+     * 4. Checks if the bit at `bitIndex` in `maskValue` is set.
+     *
+     * @param paramIndex The 0-based index of the parameter to check. This is the index
+     *                   within the function's `valueParameters` list.
+     * @param defaultInfo Information about the default parameters of the function, including the masks.
+     * @return `true` if the parameter at `paramIndex` is using its default value, `false` otherwise.
+     *         Returns `false` if the function doesn't have default parameters, if default masks are empty,
+     *         or if the calculated `maskIndex` is out of bounds.
+     */
     private fun isParameterUsingDefault(paramIndex: Int, defaultInfo: DefaultParameterInfo): Boolean {
         if (!defaultInfo.hasDefaults || defaultInfo.defaultMasks.isEmpty()) return false
 
@@ -243,6 +383,23 @@ class SemanticsIrTransformer(
         return maskValue and (0b1 shl bitIndex) != 0
     }
 
+    /**
+     * Updates the default parameter mask for a function call when a default parameter is overridden.
+     *
+     * In Kotlin, when a function has default parameters, the compiler generates additional mask parameters
+     * (integers) to indicate which parameters are using their default values. Each bit in these masks
+     * corresponds to a parameter. If a bit is set, the corresponding parameter uses its default value.
+     *
+     * This function is called when we programmatically provide a value for a parameter that was
+     * originally using its default (e.g., adding a Modifier). We need to update the corresponding
+     * mask to reflect that this parameter is no longer using its default value.
+     *
+     * @param call The [IrCall] expression representing the function call.
+     * @param paramIndex The 0-based index of the parameter whose default status is being changed.
+     *                   This index is relative to the original value parameters of the function.
+     * @param defaultInfo Information about the default parameters of the called function,
+     *                    including the original mask values.
+     */
     private fun updateDefaultParameterMask(call: IrCall, paramIndex: Int, defaultInfo: DefaultParameterInfo) {
         if (!defaultInfo.hasDefaults || defaultInfo.defaultMasks.isEmpty()) return
 
@@ -264,6 +421,29 @@ class SemanticsIrTransformer(
         )
     }
 
+    /**
+     * Creates a new semantics modifier expression.
+     *
+     * This function constructs an IR expression that represents a call to the `semantics`
+     * modifier function. It takes the original call site, a generated test tag, an optional
+     * parent modifier, and a flag indicating if the original modifier was using its default value.
+     *
+     * If `isUsingDefault` is true or `parentModifier` is null, a new empty `Modifier` instance
+     * is created as the base. Otherwise, the provided `parentModifier` is used.
+     *
+     * The `semantics` function is then called on this base modifier, with `mergeDescendants`
+     * set to `false` and a lambda that sets the `testTag` and `testTagsAsResourceId` properties.
+     *
+     * @param call The original IrCall that is being modified.
+     * @param testTag The unique test tag string to be applied.
+     * @param parentModifier The existing modifier expression, if any, to chain with.
+     *                       If null or `isUsingDefault` is true, an empty Modifier is used.
+     * @param isUsingDefault True if the original modifier parameter was using its default value,
+     *                       false otherwise. This influences whether a new empty Modifier is created.
+     * @return An IrExpression representing the new modifier with semantics applied.
+     *
+     * @author Farhazul Mullick
+     */
     private fun createSemanticsModifier(
         call: IrCall,
         testTag: String,
@@ -294,20 +474,22 @@ class SemanticsIrTransformer(
         }
     }
 
-    private fun findTextParameter(call: IrCall): Int {
-        val function: IrSimpleFunction = call.symbol.owner
-        for (i in 0 until function.valueParameters.size) {
-            val param = function.valueParameters[i]
-            if (param.type.classFqName == FqName("kotlin.String")
-                && param.name.equals("text")) {
-                println("$TAG findTextParameter, found at index ${i}")
-                return i
-            }
-        }
-        println("$TAG findTextParameter, Not found")
-        return -1
-    }
-
+    /**
+     * Generates a merged string representation (dump) of all parameters of an [IrCall].
+     *
+     * This function iterates through the value parameters of the called function.
+     * For each parameter, it retrieves the corresponding argument from the [IrCall].
+     * If an argument exists, its IR dump is appended to a [StringBuilder].
+     *
+     * Special handling is in place to skip parameters that are composable lambdas
+     * (identified by having a FunctionN type and a @Composable annotation),
+     * unless they are related to resources (e.g., `androidx.compose.ui.res` or
+     * `org.jetbrains.compose.resources`). This is to avoid including large,
+     * irrelevant lambda dumps in the generated string, which is typically used
+     * for creating stable identifiers or hashes.
+     *
+     * @return A [StringBuilder] containing the concatenated IR dumps of the relevant parameters.
+     */
     private fun IrCall.getMergedIrDumpOfParams(): StringBuilder {
         val builder = StringBuilder()
         val function: IrSimpleFunction = this.symbol.owner
@@ -334,10 +516,7 @@ class SemanticsIrTransformer(
         return builder
     }
 
-    // Extension function to check if type is a composable lambda
-    fun IrType.isComposableLambda(): Boolean {
-        return this.isFunction() && hasAnnotation(composableAnnotation)
-    }
+
     private fun findModifierParameter(call: IrCall): Int {
         val function: IrSimpleFunction = call.symbol.owner
         for (i in 0 until function.valueParameters.size) {
@@ -351,6 +530,22 @@ class SemanticsIrTransformer(
         return -1
     }
 
+    /**
+     * Retrieves the call hierarchy for the current Composable function call.
+     *
+     * This function inspects the `callQueue` (which tracks the nesting of Composable calls)
+     * to determine the parent Composable functions leading to the current call.
+     * It filters out compiler-generated or internal Compose functions (e.g., lambdas)
+     * to build a meaningful hierarchical path of user-defined Composables.
+     *
+     * @return A list of strings representing the names of the Composable functions
+     *         in the call hierarchy, from the outermost parent to the current function.
+     *         The current function's name is added as the last element.
+     *         Returns an empty list if the current call is not found in the queue (should not happen in normal operation)
+     *         or if there are no relevant parent composables.
+     *
+     * @author Farhazul Mullick
+     */
     fun IrCall.getCallHierarchy(): List<String>  {
         val calledComposableName = symbol.owner.name.asString()
         val fileName = currentFile?.nameWithoutExtension ?: "UnknownFile"
@@ -401,6 +596,17 @@ class SemanticsIrTransformer(
         return pathComponents
     }
 
+    /**
+     * Generates a stable tag for a Composable function call.
+     * The tag is constructed using the package name, "auto" prefix, optional test tag prefix,
+     * file name, call hierarchy, and a hash of the merged IR dump of parameters.
+     *
+     * Example: `com.example:id/auto_MyPrefix_MyScreen_MyComponent_ChildComponent_-123456789`
+     *
+     * @return A string representing the stable tag.
+     *
+     * @author Farhazul Mullick
+     */
     @OptIn(UnsafeDuringIrConstructionAPI::class)
     private fun IrCall.generateStableTag(): String {
         val calledComposableName = symbol.owner.name.asString()
@@ -437,6 +643,22 @@ class SemanticsIrTransformer(
         return "$tagBuilder"
     }
 
+    /**
+     * Creates an IR expression for a lambda function that sets semantics properties.
+     *
+     * This function generates the following lambda:
+     * ```
+     * { // SemanticsPropertyReceiver
+     *   testTagsAsResourceId = true
+     *   testTag = testTag // provided testTag string
+     * }
+     * ```
+     *
+     * @param testTag The string value to be set for the `testTag` semantics property.
+     * @return An [IrExpression] representing the created lambda.
+     *
+     * @author Farhazul Mullick
+     */
     @OptIn(UnsafeDuringIrConstructionAPI::class)
     private fun createSemanticsLambda(testTag: String): IrExpression {
         val unitType = pluginContext.irBuiltIns.unitType
@@ -491,6 +713,16 @@ class SemanticsIrTransformer(
         return functionExpression
     }
 
+    /**
+     * Creates a copy of an [IrCall] with a new modifier expression.
+     *
+     * This function is used to replace the existing modifier argument of a composable function call
+     * with a new modifier that includes semantics information.
+     *
+     * @param modifierParamIndex The index of the modifier parameter in the function call.
+     * @param newModifier The new modifier expression to be used.
+     * @return A new [IrCall] with the updated modifier.
+     */
     private fun IrCall.copyWithNewModifier(
         modifierParamIndex: Int,
         newModifier: IrExpression
@@ -579,6 +811,30 @@ class SemanticsIrTransformer(
     private fun defaultsBitIndex(paramIndex: Int): Int = paramIndex.rem(BITS_PER_INT)
     private fun defaultsParamIndex(paramIndex: Int): Int = paramIndex.div(BITS_PER_INT)
     private fun defaultParamCount(numParams: Int): Int = (numParams + 31) / 32
+    /**
+     * Calculates the number of "changed" parameter slots.
+     *
+     * In Compose, when a function with default parameters is called, an additional `$changed`
+     * parameter is generated. This parameter is an integer (or a series of integers) that
+     * acts as a bitmask. Each bit in this mask corresponds to a group of parameters
+     * (value parameters, `this` receiver, extension receiver, context receivers).
+     * If a bit is set, it means at least one parameter in that group has changed
+     * since the last recomposition, or that it's the initial composition.
+     *
+     * This function determines how many such integer slots are needed to represent
+     * the "changed" status for all relevant parameters.
+     *
+     * The `SLOTS_PER_INT` constant defines how many parameter groups can be represented
+     * by a single `$changed` integer.
+     *
+     * @param realValueParams The number of actual value parameters (excluding compiler-generated ones like `$composer` or `$changed`).
+     * @param thisParams The number of "this" parameters, which includes:
+     *   - Dispatch receiver (if the function is a member of a class).
+     *   - Extension receiver (if the function is an extension function).
+     *   - Context receivers.
+     * @return The number of integer slots required for the `$changed` parameter(s).
+     *         Returns 1 if there are no parameters, as there's always at least one `$changed` slot.
+     */
     private fun changedParamCount(realValueParams: Int, thisParams: Int): Int {
         val totalParams = realValueParams + thisParams
         if (totalParams == 0) return 1 // There is always at least 1 changed param

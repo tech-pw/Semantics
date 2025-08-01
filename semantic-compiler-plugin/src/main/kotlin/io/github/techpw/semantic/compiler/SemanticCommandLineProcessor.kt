@@ -8,6 +8,22 @@ import org.jetbrains.kotlin.compiler.plugin.ExperimentalCompilerApi
 import org.jetbrains.kotlin.config.CompilerConfiguration
 import org.jetbrains.kotlin.config.CompilerConfigurationKey
 
+/**
+ * Processes command-line options for the semantic plugin.
+ *
+ * This class is responsible for defining and handling the command-line arguments
+ * that can be passed to the Kotlin compiler when this plugin is active.
+ * It uses the `AutoService` annotation to be discoverable by the Kotlin compiler.
+ *
+ * The plugin supports the following options:
+ * - `enabled`: (true|false) Enables or disables the semantic plugin.
+ * - `testTagPrefix`: (string) Sets a prefix for automatically generated test tags.
+ * - `packageName`: (string) Specifies the package name to be used for generated test tags.
+ * - `whiteListedUiComponents`: (string) A comma-separated list of UI components that should be considered
+ *   for automatic test tag generation. This option can be specified multiple times.
+ *
+ *   @author Farhazul Mullick
+ */
 @OptIn(ExperimentalCompilerApi::class)
 @AutoService(CommandLineProcessor::class)
 class SemanticCommandLineProcessor : CommandLineProcessor {
