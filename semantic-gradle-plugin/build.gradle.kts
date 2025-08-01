@@ -5,11 +5,8 @@ plugins {
     id("com.gradle.plugin-publish") version "1.2.1"
     kotlin("kapt")
     alias(libs.plugins.jetbrains.kotlin.jvm)
+    alias(libs.plugins.vanniktech.publish)
 }
-
-group = "io.github.tech-pw"
-version = "1.1.1"
-val mArtifactId = "semantic-gradle-plugin"
 
 tasks.register("sourcesJar", Jar::class) {
     archiveClassifier.set("sources")
@@ -17,51 +14,20 @@ tasks.register("sourcesJar", Jar::class) {
     dependsOn(tasks.classes)
 }
 
-publishing {
-    publications {
-        create<MavenPublication>("semanticPlugin") {
-            from(components["java"])
-
-            artifactId = mArtifactId
-            pom {
-                name.set("Semantic Gradle Plugin")
-                description.set("A Gradle plugin for semantic")
-                url.set("https://gitlab.com/penpencil-services/mobile-apps/kmm/libs/compiler-plugin.git")
-
-                licenses {
-                    license {
-                        name.set("The Apache License, Version 2.0")
-                        url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
-                    }
-                }
-
-                developers {
-                    developer {
-                        id.set("farhazulmullick")
-                        name.set("Farhazul Mullick")
-                    }
-                }
-            }
-        }
-    }
-
-    repositories {
-        mavenLocal() // Publishes to the local Maven repository (~/.m2/repository)
-
-        // Optionally add a custom local directory repository
-        maven {
-            url = URI.create("https://nexus3.penpencil.co/repository/maven-hosted-snapshots/")
-            credentials {
-                username = "nx-publish"
-                password = "Nexus@12345"
-            }
-        }
+mavenPublishing {
+    coordinates(
+        groupId = "io.github.tech-pw",
+        artifactId = "semantic-gradle-plugin",
+        version = project.findProperty("VERSION") as String?
+    )
+    pom {
+        name.set("Semantic Gradle Plugin")
     }
 }
 
 dependencies {
-    implementation("com.google.auto.service:auto-service:1.1.1")
-    kapt("com.google.auto.service:auto-service:1.1.1")
+    implementation(libs.auto.service)
+    kapt(libs.auto.service)
     implementation(libs.kotlin.gradle.plugin.api)
 }
 
